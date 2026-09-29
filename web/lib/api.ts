@@ -10,6 +10,16 @@ type SessionPayload = {
   access_expires_at: string;
 };
 
+export type Interest = { slug: string; label_ru: string; label_en: string };
+export type Profile = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  bio: string;
+  interests: string[];
+  completed: boolean;
+};
+
 export function getAccessToken() {
   if (typeof window === 'undefined') return null;
   return window.sessionStorage.getItem(ACCESS_KEY);
@@ -49,23 +59,16 @@ async function request(path: string, init: RequestInit = {}, retry = true): Prom
     const refreshed = await refreshSession();
     if (refreshed) return request(path, init, false);
   }
-
   return response;
 }
 
 export async function startEmailLogin(email: string) {
-  const response = await request('/api/v1/auth/email/start', {
-    method: 'POST',
-    body: JSON.stringify({ email })
-  }, false);
+  const response = await request('/api/v1/auth/email/start', { method: 'POST', body: JSON.stringify({ email }) }, false);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
 export async function completeEmailLogin(token: string): Promise<SessionPayload> {
-  const response = await request('/api/v1/auth/email/complete', {
-    method: 'POST',
-    body: JSON.stringify({ token })
-  }, false);
+  const response = await request('/api/v1/auth/email/complete', { method: 'POST', body: JSON.stringify({ token }) }, false);
   if (!response.ok) throw new Error(await parseError(response));
   const payload = await response.json() as SessionPayload;
   setAccessToken(payload.access_token);
@@ -98,4 +101,23 @@ export async function revokeSession(sessionId: string) {
   const response = await request(`/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
   if (!response.ok && response.status !== 404) throw new Error(await parseError(response));
   setAccessToken(null);
+}
+
+export async function listInterests(): Promise<Interest[]> {
+  const response = await request('/api/v1/onboarding/interests', {}, false);
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { items: Interest[] };
+  return payload.items;
+}
+
+export async function getProfile(): Promise<Profile | null> {
+  const response = await request('/api/v1/me/profile');
+  if (!response.ok) return null;
+  return response.json() as Promise<Profile>;
+}
+
+export async function completeOnboarding(input: { username: string; display_name: string; bio: string; interests: string[] }): Promise<Profile> {
+  const response = await request('/api/v1/me/onboarding', { method: 'PUT', body: JSON.stringify(input) });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<Profile>;
 }
