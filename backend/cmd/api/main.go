@@ -14,6 +14,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
+	"github.com/venomimonstro/chat-hive/backend/internal/social"
 )
 
 func main() {
@@ -54,9 +55,13 @@ func main() {
 	onboardingService := onboarding.NewService(onboarding.NewPostgresStore(pool))
 	onboardingHTTP := onboarding.NewHTTPHandler(onboardingService, identityService, logger)
 
+	socialService := social.NewService(social.NewPostgresStore(pool))
+	socialHTTP := social.NewHTTPHandler(socialService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
+	app.Register(socialHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 
