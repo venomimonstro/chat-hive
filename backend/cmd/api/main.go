@@ -13,6 +13,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/config"
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
+	"github.com/venomimonstro/chat-hive/backend/internal/messaging"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 	"github.com/venomimonstro/chat-hive/backend/internal/social"
 )
@@ -44,11 +45,8 @@ func main() {
 	var sender identity.MagicLinkSender
 	if cfg.Environment == "production" {
 		sender, err = identity.NewSMTPMagicLinkSender(identity.SMTPConfig{
-			Addr:     cfg.SMTPAddr,
-			Username: cfg.SMTPUsername,
-			Password: cfg.SMTPPassword,
-			From:     cfg.SMTPFrom,
-			BaseURL:  cfg.MagicLinkBaseURL,
+			Addr: cfg.SMTPAddr, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
+			From: cfg.SMTPFrom, BaseURL: cfg.MagicLinkBaseURL,
 		})
 	} else {
 		sender, err = identity.NewLogMagicLinkSender(logger, cfg.MagicLinkBaseURL)
@@ -61,12 +59,10 @@ func main() {
 	identityService := identity.NewService(store, sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
 	if cfg.YandexClientID != "" {
-		yandexOAuth := identity.NewYandexOAuth(store, identity.YandexConfig{
-			ClientID:       cfg.YandexClientID,
-			RedirectURL:    cfg.YandexRedirectURL,
+		identityHTTP.SetYandexOAuth(identity.NewYandexOAuth(store, identity.YandexConfig{
+			ClientID: cfg.YandexClientID, RedirectURL: cfg.YandexRedirectURL,
 			WebCompleteURL: cfg.WebOrigin + "/auth/yandex-complete",
-		})
-		identityHTTP.SetYandexOAuth(yandexOAuth)
+		}))
 	}
 
 	onboardingService := onboarding.NewService(onboarding.NewPostgresStore(pool))
@@ -75,21 +71,21 @@ func main() {
 	socialService := social.NewService(social.NewPostgresStore(pool))
 	socialHTTP := social.NewHTTPHandler(socialService, identityService, logger)
 
+	messagingService := messaging.NewService(messaging.NewPostgresStore(pool))
+	messagingHTTP := messaging.NewHTTPHandler(messagingService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.Register(socialHTTP.Register)
+	app.Register(messagingHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           app.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    1 << 20,
+		Addr: cfg.HTTPAddr, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second,
+		IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20,
 	}
 
 	serverErr := make(chan error, 1)
