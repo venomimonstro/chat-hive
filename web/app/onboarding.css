@@ -1,0 +1,32 @@
+.onboardingShell { min-height: 100dvh; display: grid; place-items: center; padding: 32px 16px; }
+.onboardingCard { width: min(100%, 760px); padding: 32px; }
+.onboardingHeader h1 { font-size: clamp(32px, 6vw, 48px); margin: 10px 0 12px; letter-spacing: -.05em; }
+.onboardingHeader p { margin: 0; color: var(--color-muted); line-height: 1.55; max-width: 620px; }
+.onboardingForm { display: grid; gap: 22px; margin-top: 28px; }
+.onboardingForm label, .onboardingForm fieldset { display: grid; gap: 8px; }
+.onboardingForm label > span, .onboardingForm legend { font-size: 13px; font-weight: 750; }
+.onboardingForm small { color: var(--color-muted); font-weight: 500; }
+.onboardingForm input, .onboardingForm textarea {
+  width: 100%; border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-text); padding: 12px 14px; outline: 0;
+}
+.onboardingForm input { min-height: 48px; }
+.onboardingForm textarea { resize: vertical; min-height: 92px; }
+.onboardingForm input:focus, .onboardingForm textarea:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent); }
+.onboardingGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.usernameField { display: flex; align-items: center; border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-bg); padding-left: 14px; }
+.usernameField:focus-within { border-color: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent); }
+.usernameField > span { color: var(--color-muted); }
+.usernameField input { border: 0; box-shadow: none !important; padding-left: 4px; }
+.onboardingForm fieldset { border: 0; padding: 0; margin: 0; }
+.interestGrid { display: flex; flex-wrap: wrap; gap: 10px; }
+.interestChip { min-height: 42px; border: 1px solid var(--color-line); border-radius: var(--radius-round); background: var(--color-surface); color: var(--color-text); padding: 0 14px; cursor: pointer; }
+.interestChip.isSelected { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
+.onboardingFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 8px; }
+.onboardingFooter > span { color: var(--color-muted); font-size: 13px; }
+@media (max-width: 620px) {
+  .onboardingShell { padding: 0; background: var(--color-surface); }
+  .onboardingCard { min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; padding: 24px 18px calc(24px + env(safe-area-inset-bottom)); }
+  .onboardingGrid { grid-template-columns: 1fr; }
+  .onboardingFooter { align-items: stretch; flex-direction: column; }
+  .onboardingFooter .uiButton { width: 100%; }
+}
