@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import './auth.css';
+import './onboarding.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
