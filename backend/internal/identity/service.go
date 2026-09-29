@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrInvalidChallenge = errors.New("invalid or expired login challenge")
+	ErrInvalidSession   = errors.New("invalid or expired session")
 	ErrRateLimited      = errors.New("too many login attempts")
 )
 
@@ -22,6 +23,8 @@ type Store interface {
 	CreateLoginChallenge(ctx context.Context, email string, tokenHash []byte, requestIP string, expiresAt time.Time) error
 	ConsumeLoginChallenge(ctx context.Context, tokenHash []byte, now time.Time) (userID string, err error)
 	CreateSession(ctx context.Context, input CreateSessionInput) (string, error)
+	FindSessionByAccessTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (AuthenticatedSession, error)
+	RevokeSession(ctx context.Context, userID, sessionID string, now time.Time) (bool, error)
 }
 
 type MagicLinkSender interface {
@@ -36,6 +39,12 @@ type CreateSessionInput struct {
 	IP               string
 	AccessExpiresAt  time.Time
 	RefreshExpiresAt time.Time
+}
+
+type AuthenticatedSession struct {
+	UserID    string    `json:"user_id"`
+	SessionID string    `json:"session_id"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type SessionTokens struct {
@@ -146,6 +155,35 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 		AccessExpiry:  accessExpiry,
 		RefreshExpiry: refreshExpiry,
 	}, nil
+}
+
+func (s *Service) AuthenticateAccessToken(ctx context.Context, rawToken string) (AuthenticatedSession, error) {
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" || len(rawToken) > 512 {
+		return AuthenticatedSession{}, ErrInvalidSession
+	}
+	session, err := s.store.FindSessionByAccessTokenHash(ctx, hashToken(rawToken), s.now())
+	if err != nil {
+		if errors.Is(err, ErrInvalidSession) {
+			return AuthenticatedSession{}, ErrInvalidSession
+		}
+		return AuthenticatedSession{}, fmt.Errorf("authenticate access token: %w", err)
+	}
+	return session, nil
+}
+
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) error {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
+		return ErrInvalidSession
+	}
+	revoked, err := s.store.RevokeSession(ctx, userID, sessionID, s.now())
+	if err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	if !revoked {
+		return ErrInvalidSession
+	}
+	return nil
 }
 
 func normalizeEmail(value string) (string, error) {
