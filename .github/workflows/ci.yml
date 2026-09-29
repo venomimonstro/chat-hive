@@ -29,6 +29,11 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      - name: Module integrity
+        run: |
+          go mod tidy
+          git diff -- go.mod go.sum
+          git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       - name: Test
