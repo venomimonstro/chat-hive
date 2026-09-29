@@ -1,6 +1,7 @@
 package social
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -32,7 +33,9 @@ func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
 	viewerID := ""
 	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 		session, ok := h.authenticate(w, r)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		viewerID = session.UserID
 	}
 	profile, err := h.service.GetProfile(r.Context(), viewerID, r.PathValue("username"))
@@ -49,20 +52,38 @@ func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) follow(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Follow, http.StatusNoContent)
-}
-func (h *HTTPHandler) unfollow(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Unfollow, http.StatusNoContent)
-}
-func (h *HTTPHandler) block(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Block, http.StatusNoContent)
-}
-func (h *HTTPHandler) unblock(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Unblock, http.StatusNoContent)
+	h.mutate(w, r, h.service.Follow)
 }
 
-func (h *HTTPHandler) mutate(w http.ResponseWriter, r *http.Request, action func(r.Context, string, string) error, success int) {
-	// Kept as separate explicit handlers until shared authenticated HTTP middleware lands.
+func (h *HTTPHandler) unfollow(w http.ResponseWriter, r *http.Request) {
+	h.mutate(w, r, h.service.Unfollow)
+}
+
+func (h *HTTPHandler) block(w http.ResponseWriter, r *http.Request) {
+	h.mutate(w, r, h.service.Block)
+}
+
+func (h *HTTPHandler) unblock(w http.ResponseWriter, r *http.Request) {
+	h.mutate(w, r, h.service.Unblock)
+}
+
+func (h *HTTPHandler) mutate(w http.ResponseWriter, r *http.Request, action func(context.Context, string, string) error) {
+	session, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	err := action(r.Context(), session.UserID, r.PathValue("username"))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, ErrProfileNotFound):
+		writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+	case errors.Is(err, ErrInteractionDenied):
+		writeError(w, http.StatusConflict, "interaction_denied", "This action is not available")
+	default:
+		h.logger.Error("social graph mutation failed", "error", err, "user_id", session.UserID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+	}
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
