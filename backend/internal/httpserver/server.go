@@ -10,9 +10,10 @@ import (
 )
 
 type Server struct {
-	logger    *slog.Logger
-	mux       *http.ServeMux
-	readiness func(context.Context) error
+	logger        *slog.Logger
+	mux           *http.ServeMux
+	readiness     func(context.Context) error
+	allowedOrigin string
 }
 
 type healthResponse struct {
@@ -26,16 +27,12 @@ func New(logger *slog.Logger) *Server {
 	return s
 }
 
-func (s *Server) Register(register func(*http.ServeMux)) {
-	register(s.mux)
-}
-
-func (s *Server) SetReadiness(check func(context.Context) error) {
-	s.readiness = check
-}
+func (s *Server) Register(register func(*http.ServeMux)) { register(s.mux) }
+func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness = check }
+func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
 
 func (s *Server) Handler() http.Handler {
-	return recoverMiddleware(s.logger, requestIDMiddleware(securityHeaders(s.mux)))
+	return recoverMiddleware(s.logger, requestIDMiddleware(securityHeaders(corsMiddleware(s.allowedOrigin, s.mux))))
 }
 
 func (s *Server) routes() {
@@ -59,6 +56,28 @@ func (s *Server) routes() {
 	})
 }
 
+func corsMiddleware(allowedOrigin string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := strings.TrimRight(strings.TrimSpace(r.Header.Get("Origin")), "/")
+		if origin != "" && origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Vary", "Origin")
+		}
+		if r.Method == http.MethodOptions {
+			if origin == allowedOrigin {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -70,6 +89,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-site")
 		next.ServeHTTP(w, r)
 	})
 }
