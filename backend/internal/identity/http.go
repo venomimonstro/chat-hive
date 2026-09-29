@@ -23,6 +23,8 @@ func NewHTTPHandler(service *Service, logger *slog.Logger, secureCookie bool) *H
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/start", h.startEmail)
 	mux.HandleFunc("POST /api/v1/auth/email/complete", h.completeEmail)
+	mux.HandleFunc("GET /api/v1/auth/session", h.currentSession)
+	mux.HandleFunc("DELETE /api/v1/auth/sessions/{session_id}", h.revokeSession)
 }
 
 func (h *HTTPHandler) startEmail(w http.ResponseWriter, r *http.Request) {
@@ -70,23 +72,106 @@ func (h *HTTPHandler) completeEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "chat_refresh",
-		Value:    tokens.RefreshToken,
-		Path:     "/api/v1/auth",
-		HttpOnly: true,
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  tokens.RefreshExpiry,
-		MaxAge:   int(time.Until(tokens.RefreshExpiry).Seconds()),
-	})
-
+	h.setRefreshCookie(w, tokens.RefreshToken, tokens.RefreshExpiry)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id":           tokens.UserID,
 		"session_id":        tokens.SessionID,
 		"access_token":      tokens.AccessToken,
 		"access_expires_at": tokens.AccessExpiry,
 	})
+}
+
+func (h *HTTPHandler) currentSession(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (h *HTTPHandler) revokeSession(w http.ResponseWriter, r *http.Request) {
+	current, ok := h.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	targetSessionID := strings.TrimSpace(r.PathValue("session_id"))
+	if targetSessionID == "" || len(targetSessionID) > 64 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_session", "Invalid session")
+		return
+	}
+	if err := h.service.RevokeSession(r.Context(), current.UserID, targetSessionID); err != nil {
+		if errors.Is(err, ErrInvalidSession) {
+			// Do not reveal another user's session IDs.
+			writeAPIError(w, http.StatusNotFound, "session_not_found", "Session not found")
+			return
+		}
+		h.logger.Error("revoke session failed", "error", err, "user_id", current.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	if targetSessionID == current.SessionID {
+		h.clearRefreshCookie(w)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) authenticateRequest(w http.ResponseWriter, r *http.Request) (AuthenticatedSession, bool) {
+	rawToken, ok := bearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return AuthenticatedSession{}, false
+	}
+	session, err := h.service.AuthenticateAccessToken(r.Context(), rawToken)
+	if err != nil {
+		if !errors.Is(err, ErrInvalidSession) {
+			h.logger.Error("access session validation failed", "error", err)
+		}
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return AuthenticatedSession{}, false
+	}
+	return session, true
+}
+
+func bearerToken(header string) (string, bool) {
+	parts := strings.Fields(header)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
+		return "", false
+	}
+	return parts[1], true
+}
+
+func (h *HTTPHandler) setRefreshCookie(w http.ResponseWriter, token string, expiry time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "chat_refresh",
+		Value:    token,
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  expiry,
+		MaxAge:   maxAgeUntil(expiry),
+	})
+}
+
+func (h *HTTPHandler) clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "chat_refresh",
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(1, 0),
+		MaxAge:   -1,
+	})
+}
+
+func maxAgeUntil(expiry time.Time) int {
+	seconds := int(time.Until(expiry).Seconds())
+	if seconds < 0 {
+		return 0
+	}
+	return seconds
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
