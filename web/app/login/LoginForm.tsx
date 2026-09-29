@@ -2,16 +2,16 @@
 
 import { FormEvent, useState } from 'react';
 import { Button, Surface } from '../../components/ui';
-import { startEmailLogin } from '../../lib/api';
+import { startEmailLogin, startYandexLogin } from '../../lib/api';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'yandex'>('idle');
   const [error, setError] = useState('');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (status === 'sending') return;
+    if (status === 'sending' || status === 'yandex') return;
     setStatus('sending');
     setError('');
     try {
@@ -20,6 +20,19 @@ export function LoginForm() {
     } catch (err) {
       setStatus('idle');
       setError(err instanceof Error ? err.message : 'Не удалось отправить ссылку');
+    }
+  }
+
+  async function loginWithYandex() {
+    if (status === 'sending' || status === 'yandex') return;
+    setStatus('yandex');
+    setError('');
+    try {
+      const authorizationURL = await startYandexLogin();
+      window.location.assign(authorizationURL);
+    } catch (err) {
+      setStatus('idle');
+      setError(err instanceof Error ? err.message : 'Вход через Яндекс временно недоступен');
     }
   }
 
@@ -55,12 +68,14 @@ export function LoginForm() {
           />
         </label>
         {error ? <div className="authError" role="alert">{error}</div> : null}
-        <Button type="submit" fullWidth disabled={status === 'sending'}>
+        <Button type="submit" fullWidth disabled={status === 'sending' || status === 'yandex'}>
           {status === 'sending' ? 'Отправляем…' : 'Продолжить'}
         </Button>
       </form>
       <div className="authDivider"><span>или</span></div>
-      <Button variant="secondary" fullWidth disabled title="Будет подключено через Яндекс ID">Войти через Яндекс ID</Button>
+      <Button variant="secondary" fullWidth disabled={status === 'sending' || status === 'yandex'} onClick={loginWithYandex}>
+        {status === 'yandex' ? 'Открываем Яндекс…' : 'Войти через Яндекс ID'}
+      </Button>
       <small>Продолжая, вы принимаете правила сервиса и политику конфиденциальности.</small>
     </Surface>
   );
