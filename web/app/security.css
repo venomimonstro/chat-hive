@@ -1,0 +1,20 @@
+.securityScreen { padding: 24px 20px 96px; }
+.securityHeader { margin-bottom: 24px; }
+.securityHeader h1 { margin: 8px 0 10px; font-size: 30px; letter-spacing: -.04em; }
+.securityHeader p { margin: 0; color: var(--color-muted); line-height: 1.55; max-width: 620px; }
+.securityLoading { color: var(--color-muted); padding: 28px 0; }
+.sessionList { display: grid; gap: 12px; margin-top: 16px; }
+.sessionCard { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 14px; padding: 16px; }
+.sessionIcon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 14px; background: var(--color-accent-soft); color: var(--color-accent); }
+.sessionCopy { min-width: 0; }
+.sessionTitle { display: flex; align-items: center; gap: 8px; }
+.sessionTitle span { background: var(--color-accent-soft); color: var(--color-accent); border-radius: var(--radius-round); padding: 3px 8px; font-size: 11px; font-weight: 700; }
+.sessionCopy > small { display: block; margin-top: 5px; color: var(--color-muted); line-height: 1.45; }
+.sessionCopy details { margin-top: 8px; color: var(--color-muted); font-size: 12px; }
+.sessionCopy summary { cursor: pointer; }
+.sessionCopy details p { overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .securityScreen { padding: 22px 16px 96px; }
+  .sessionCard { grid-template-columns: auto 1fr; }
+  .sessionCard .uiButton { grid-column: 1 / -1; width: 100%; }
+}
