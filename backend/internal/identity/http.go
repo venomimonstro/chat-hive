@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
 type HTTPHandler struct {
 	service      *Service
+	yandex       *YandexOAuth
 	logger       *slog.Logger
 	secureCookie bool
 }
@@ -20,9 +22,13 @@ func NewHTTPHandler(service *Service, logger *slog.Logger, secureCookie bool) *H
 	return &HTTPHandler{service: service, logger: logger, secureCookie: secureCookie}
 }
 
+func (h *HTTPHandler) SetYandexOAuth(yandex *YandexOAuth) { h.yandex = yandex }
+
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/start", h.startEmail)
 	mux.HandleFunc("POST /api/v1/auth/email/complete", h.completeEmail)
+	mux.HandleFunc("GET /api/v1/auth/yandex/start", h.startYandex)
+	mux.HandleFunc("GET /api/v1/auth/yandex/callback", h.completeYandex)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refreshSession)
 	mux.HandleFunc("GET /api/v1/auth/session", h.currentSession)
 	mux.HandleFunc("DELETE /api/v1/auth/sessions/{session_id}", h.revokeSession)
@@ -73,6 +79,56 @@ func (h *HTTPHandler) completeEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeSessionTokens(w, tokens)
+}
+
+func (h *HTTPHandler) startYandex(w http.ResponseWriter, r *http.Request) {
+	if h.yandex == nil || !h.yandex.Enabled() {
+		writeAPIError(w, http.StatusServiceUnavailable, "yandex_not_configured", "Yandex ID is not configured")
+		return
+	}
+	authorizationURL, err := h.yandex.Start(r.Context(), clientIP(r))
+	if err != nil {
+		h.logger.Error("start yandex oauth failed", "error", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"authorization_url": authorizationURL})
+}
+
+func (h *HTTPHandler) completeYandex(w http.ResponseWriter, r *http.Request) {
+	if h.yandex == nil || !h.yandex.Enabled() {
+		writeAPIError(w, http.StatusServiceUnavailable, "yandex_not_configured", "Yandex ID is not configured")
+		return
+	}
+	base := h.yandex.WebCompleteURL()
+	if providerError := strings.TrimSpace(r.URL.Query().Get("error")); providerError != "" {
+		h.redirectOAuthResult(w, r, base, "yandex_denied")
+		return
+	}
+	tokens, err := h.yandex.Complete(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("state"), r.UserAgent(), clientIP(r))
+	if err != nil {
+		if !errors.Is(err, ErrOAuthState) {
+			h.logger.Error("complete yandex oauth failed", "error", err)
+		}
+		h.redirectOAuthResult(w, r, base, "oauth_failed")
+		return
+	}
+	h.setRefreshCookie(w, tokens.RefreshToken, tokens.RefreshExpiry)
+	h.redirectOAuthResult(w, r, base, "")
+}
+
+func (h *HTTPHandler) redirectOAuthResult(w http.ResponseWriter, r *http.Request, base, errorCode string) {
+	target, err := url.Parse(base)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "oauth_redirect_invalid", "OAuth redirect is not configured")
+		return
+	}
+	if errorCode != "" {
+		query := target.Query()
+		query.Set("error", errorCode)
+		target.RawQuery = query.Encode()
+	}
+	http.Redirect(w, r, target.String(), http.StatusSeeOther)
 }
 
 func (h *HTTPHandler) refreshSession(w http.ResponseWriter, r *http.Request) {
