@@ -135,6 +135,84 @@ func (s *PostgresStore) FindSessionByAccessTokenHash(ctx context.Context, tokenH
 	return session, nil
 }
 
+func (s *PostgresStore) RotateRefreshToken(ctx context.Context, input RotateSessionInput) (AuthenticatedSession, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return AuthenticatedSession{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var session AuthenticatedSession
+	const selectCurrent = `
+		SELECT user_id::text, id::text, access_expires_at
+		FROM sessions
+		WHERE refresh_token_hash = $1
+		  AND revoked_at IS NULL
+		  AND expires_at > $2
+		FOR UPDATE`
+	err = tx.QueryRow(ctx, selectCurrent, input.OldRefreshTokenHash, input.Now).Scan(
+		&session.UserID,
+		&session.SessionID,
+		&session.ExpiresAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var replaySessionID string
+		const findReplay = `
+			SELECT s.id::text
+			FROM session_refresh_history h
+			JOIN sessions s ON s.id = h.session_id
+			WHERE h.token_hash = $1 AND s.revoked_at IS NULL
+			FOR UPDATE OF s`
+		replayErr := tx.QueryRow(ctx, findReplay, input.OldRefreshTokenHash).Scan(&replaySessionID)
+		if errors.Is(replayErr, pgx.ErrNoRows) {
+			return AuthenticatedSession{}, ErrInvalidSession
+		}
+		if replayErr != nil {
+			return AuthenticatedSession{}, replayErr
+		}
+		if _, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = $2, access_token_hash = NULL WHERE id = $1::uuid`, replaySessionID, input.Now); err != nil {
+			return AuthenticatedSession{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return AuthenticatedSession{}, err
+		}
+		return AuthenticatedSession{}, ErrRefreshReuse
+	}
+	if err != nil {
+		return AuthenticatedSession{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO session_refresh_history (token_hash, session_id, consumed_at)
+		VALUES ($1, $2::uuid, $3)`, input.OldRefreshTokenHash, session.SessionID, input.Now); err != nil {
+		return AuthenticatedSession{}, err
+	}
+
+	const rotate = `
+		UPDATE sessions
+		SET refresh_token_hash = $2,
+		    access_token_hash = $3,
+		    access_expires_at = $4,
+		    expires_at = $5,
+		    last_seen_at = $6
+		WHERE id = $1::uuid`
+	if _, err := tx.Exec(ctx, rotate,
+		session.SessionID,
+		input.NewRefreshTokenHash,
+		input.NewAccessTokenHash,
+		input.AccessExpiresAt,
+		input.RefreshExpiresAt,
+		input.Now,
+	); err != nil {
+		return AuthenticatedSession{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AuthenticatedSession{}, err
+	}
+	session.ExpiresAt = input.AccessExpiresAt
+	return session, nil
+}
+
 func (s *PostgresStore) RevokeSession(ctx context.Context, userID, sessionID string, now time.Time) (bool, error) {
 	const query = `
 		UPDATE sessions
