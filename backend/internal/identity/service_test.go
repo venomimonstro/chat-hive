@@ -43,11 +43,7 @@ func (f *fakeStore) FindSessionByAccessTokenHash(_ context.Context, tokenHash []
 	if f.sessionRevoked || len(f.session.AccessTokenHash) == 0 || !bytes.Equal(tokenHash, f.session.AccessTokenHash) {
 		return AuthenticatedSession{}, ErrInvalidSession
 	}
-	return AuthenticatedSession{
-		UserID:    f.session.UserID,
-		SessionID: f.sessionID,
-		ExpiresAt: f.session.AccessExpiresAt,
-	}, nil
+	return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, ExpiresAt: f.session.AccessExpiresAt}, nil
 }
 func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInput) (AuthenticatedSession, error) {
 	if f.sessionRevoked {
@@ -59,11 +55,7 @@ func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInp
 		f.session.AccessTokenHash = append([]byte(nil), input.NewAccessTokenHash...)
 		f.session.AccessExpiresAt = input.AccessExpiresAt
 		f.session.RefreshExpiresAt = input.RefreshExpiresAt
-		return AuthenticatedSession{
-			UserID:    f.session.UserID,
-			SessionID: f.sessionID,
-			ExpiresAt: input.AccessExpiresAt,
-		}, nil
+		return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, ExpiresAt: input.AccessExpiresAt}, nil
 	}
 	for _, consumed := range f.refreshHistory {
 		if bytes.Equal(input.OldRefreshTokenHash, consumed) {
@@ -72,6 +64,19 @@ func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInp
 		}
 	}
 	return AuthenticatedSession{}, ErrInvalidSession
+}
+func (f *fakeStore) ListSessions(_ context.Context, userID string, _ time.Time) ([]DeviceSession, error) {
+	if f.sessionRevoked || userID != f.session.UserID || f.sessionID == "" {
+		return []DeviceSession{}, nil
+	}
+	return []DeviceSession{{
+		SessionID: f.sessionID,
+		UserAgent: f.session.UserAgent,
+		LastIP: f.session.IP,
+		CreatedAt: f.session.AccessExpiresAt.Add(-15 * time.Minute),
+		LastSeenAt: f.session.AccessExpiresAt.Add(-15 * time.Minute),
+		ExpiresAt: f.session.RefreshExpiresAt,
+	}}, nil
 }
 func (f *fakeStore) RevokeSession(_ context.Context, userID, sessionID string, _ time.Time) (bool, error) {
 	if f.sessionRevoked || userID != f.session.UserID || sessionID != f.sessionID {
@@ -128,7 +133,7 @@ func TestMagicLinkIsHashedAndSingleUse(t *testing.T) {
 	}
 }
 
-func TestAccessSessionCanBeValidatedAndRevoked(t *testing.T) {
+func TestAccessSessionCanBeValidatedListedAndRevoked(t *testing.T) {
 	store, service, tokens := authenticatedFixture(t)
 
 	session, err := service.AuthenticateAccessToken(context.Background(), tokens.AccessToken)
@@ -137,6 +142,11 @@ func TestAccessSessionCanBeValidatedAndRevoked(t *testing.T) {
 	}
 	if session.UserID != tokens.UserID || session.SessionID != tokens.SessionID {
 		t.Fatalf("unexpected authenticated session: %+v", session)
+	}
+
+	items, err := service.ListSessions(context.Background(), tokens.UserID)
+	if err != nil || len(items) != 1 || items[0].SessionID != tokens.SessionID {
+		t.Fatalf("unexpected session list: items=%+v err=%v", items, err)
 	}
 
 	if err := service.RevokeSession(context.Background(), tokens.UserID, tokens.SessionID); err != nil {
