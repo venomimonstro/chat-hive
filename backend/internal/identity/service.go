@@ -26,6 +26,7 @@ type Store interface {
 	CreateSession(ctx context.Context, input CreateSessionInput) (string, error)
 	FindSessionByAccessTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (AuthenticatedSession, error)
 	RotateRefreshToken(ctx context.Context, input RotateSessionInput) (AuthenticatedSession, error)
+	ListSessions(ctx context.Context, userID string, now time.Time) ([]DeviceSession, error)
 	RevokeSession(ctx context.Context, userID, sessionID string, now time.Time) (bool, error)
 }
 
@@ -56,6 +57,15 @@ type AuthenticatedSession struct {
 	UserID    string    `json:"user_id"`
 	SessionID string    `json:"session_id"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type DeviceSession struct {
+	SessionID  string    `json:"session_id"`
+	UserAgent  string    `json:"user_agent"`
+	LastIP     string    `json:"last_ip"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type SessionTokens struct {
@@ -200,6 +210,18 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, rawToken string) 
 		return AuthenticatedSession{}, fmt.Errorf("authenticate access token: %w", err)
 	}
 	return session, nil
+}
+
+func (s *Service) ListSessions(ctx context.Context, userID string) ([]DeviceSession, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrInvalidSession
+	}
+	sessions, err := s.store.ListSessions(ctx, userID, s.now())
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	return sessions, nil
 }
 
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) error {
