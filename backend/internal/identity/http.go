@@ -23,6 +23,7 @@ func NewHTTPHandler(service *Service, logger *slog.Logger, secureCookie bool) *H
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/start", h.startEmail)
 	mux.HandleFunc("POST /api/v1/auth/email/complete", h.completeEmail)
+	mux.HandleFunc("POST /api/v1/auth/refresh", h.refreshSession)
 	mux.HandleFunc("GET /api/v1/auth/session", h.currentSession)
 	mux.HandleFunc("DELETE /api/v1/auth/sessions/{session_id}", h.revokeSession)
 }
@@ -47,7 +48,6 @@ func (h *HTTPHandler) startEmail(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_email", "Enter a valid email")
 	default:
 		h.logger.Error("start email login failed", "error", err)
-		// Deliberately avoid exposing whether an account exists or internal mail/storage state.
 		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 	}
 }
@@ -72,13 +72,33 @@ func (h *HTTPHandler) completeEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setRefreshCookie(w, tokens.RefreshToken, tokens.RefreshExpiry)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":           tokens.UserID,
-		"session_id":        tokens.SessionID,
-		"access_token":      tokens.AccessToken,
-		"access_expires_at": tokens.AccessExpiry,
-	})
+	h.writeSessionTokens(w, tokens)
+}
+
+func (h *HTTPHandler) refreshSession(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("chat_refresh")
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		h.clearRefreshCookie(w)
+		writeAPIError(w, http.StatusUnauthorized, "session_expired", "Session expired")
+		return
+	}
+
+	tokens, err := h.service.RefreshSession(r.Context(), cookie.Value)
+	if err != nil {
+		h.clearRefreshCookie(w)
+		if errors.Is(err, ErrRefreshReuse) {
+			h.logger.Warn("refresh token reuse detected", "ip", clientIP(r))
+			writeAPIError(w, http.StatusUnauthorized, "session_revoked", "Session revoked")
+			return
+		}
+		if !errors.Is(err, ErrInvalidSession) {
+			h.logger.Error("refresh session failed", "error", err)
+		}
+		writeAPIError(w, http.StatusUnauthorized, "session_expired", "Session expired")
+		return
+	}
+
+	h.writeSessionTokens(w, tokens)
 }
 
 func (h *HTTPHandler) currentSession(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +121,6 @@ func (h *HTTPHandler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.service.RevokeSession(r.Context(), current.UserID, targetSessionID); err != nil {
 		if errors.Is(err, ErrInvalidSession) {
-			// Do not reveal another user's session IDs.
 			writeAPIError(w, http.StatusNotFound, "session_not_found", "Session not found")
 			return
 		}
@@ -138,6 +157,16 @@ func bearerToken(header string) (string, bool) {
 		return "", false
 	}
 	return parts[1], true
+}
+
+func (h *HTTPHandler) writeSessionTokens(w http.ResponseWriter, tokens SessionTokens) {
+	h.setRefreshCookie(w, tokens.RefreshToken, tokens.RefreshExpiry)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_id":           tokens.UserID,
+		"session_id":        tokens.SessionID,
+		"access_token":      tokens.AccessToken,
+		"access_expires_at": tokens.AccessExpiry,
+	})
 }
 
 func (h *HTTPHandler) setRefreshCookie(w http.ResponseWriter, token string, expiry time.Time) {
@@ -192,7 +221,6 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func clientIP(r *http.Request) string {
-	// Do not trust X-Forwarded-For here. A trusted edge-proxy middleware will normalize it later.
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		return host
