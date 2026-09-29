@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+bin/
+coverage.out
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local data
+.local/
+data/
