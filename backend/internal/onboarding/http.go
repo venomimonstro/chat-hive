@@ -10,10 +10,6 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
-type Authenticator interface {
-	AuthenticateAccessToken(ctx interface{ Done() <-chan struct{} }, rawToken string) (identity.AuthenticatedSession, error)
-}
-
 type HTTPHandler struct {
 	service *Service
 	auth    *identity.Service
@@ -42,7 +38,9 @@ func (h *HTTPHandler) listInterests(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	profile, err := h.service.GetProfile(r.Context(), session.UserID)
 	if err != nil {
 		h.logger.Error("get profile failed", "error", err, "user_id", session.UserID)
@@ -54,7 +52,9 @@ func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) complete(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	var body struct {
 		Username    string   `json:"username"`
 		DisplayName string   `json:"display_name"`
@@ -65,7 +65,13 @@ func (h *HTTPHandler) complete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
-	profile, err := h.service.Complete(r.Context(), CompleteInput{UserID: session.UserID, Username: body.Username, DisplayName: body.DisplayName, Bio: body.Bio, Interests: body.Interests})
+	profile, err := h.service.Complete(r.Context(), CompleteInput{
+		UserID:      session.UserID,
+		Username:    body.Username,
+		DisplayName: body.DisplayName,
+		Bio:         body.Bio,
+		Interests:   body.Interests,
+	})
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, profile)
@@ -81,7 +87,7 @@ func (h *HTTPHandler) complete(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
 	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return identity.AuthenticatedSession{}, false
 	}
