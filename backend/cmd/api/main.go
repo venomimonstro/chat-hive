@@ -44,13 +44,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	store := identity.NewPostgresStore(pool)
 	sender, err := identity.NewLogMagicLinkSender(logger, cfg.MagicLinkBaseURL)
 	if err != nil {
 		logger.Error("magic link sender configuration failed", "error", err)
 		os.Exit(1)
 	}
-	identityService := identity.NewService(identity.NewPostgresStore(pool), sender)
+	identityService := identity.NewService(store, sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
+	if cfg.YandexClientID != "" {
+		yandexOAuth := identity.NewYandexOAuth(store, identity.YandexConfig{
+			ClientID:       cfg.YandexClientID,
+			RedirectURL:    cfg.YandexRedirectURL,
+			WebCompleteURL: cfg.WebOrigin + "/auth/yandex-complete",
+		})
+		identityHTTP.SetYandexOAuth(yandexOAuth)
+	}
 
 	onboardingService := onboarding.NewService(onboarding.NewPostgresStore(pool))
 	onboardingHTTP := onboarding.NewHTTPHandler(onboardingService, identityService, logger)
