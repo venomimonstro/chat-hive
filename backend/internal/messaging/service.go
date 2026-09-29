@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -24,20 +25,21 @@ type ChatSummary struct {
 	LastMessage      *Message `json:"last_message,omitempty"`
 	LastReadSequence int64    `json:"last_read_sequence"`
 	UnreadCount      int64    `json:"unread_count"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type Message struct {
-	ID              string  `json:"id"`
-	ChatID          string  `json:"chat_id"`
-	SenderID        string  `json:"sender_id,omitempty"`
-	ClientMessageID string  `json:"client_message_id"`
-	Sequence        int64   `json:"sequence"`
-	Type            string  `json:"type"`
-	Body            string  `json:"body"`
-	ReplyToID       *string `json:"reply_to_id,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	EditedAt        *string `json:"edited_at,omitempty"`
-	DeletedAt       *string `json:"deleted_at,omitempty"`
+	ID              string     `json:"id"`
+	ChatID          string     `json:"chat_id"`
+	SenderID        string     `json:"sender_id,omitempty"`
+	ClientMessageID string     `json:"client_message_id"`
+	Sequence        int64      `json:"sequence"`
+	Type            string     `json:"type"`
+	Body            string     `json:"body"`
+	ReplyToID       *string    `json:"reply_to_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	EditedAt        *time.Time `json:"edited_at,omitempty"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 }
 
 type SendInput struct {
