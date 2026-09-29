@@ -41,6 +41,32 @@ export type PublicProfile = {
   is_self: boolean;
 };
 
+export type ChatMessage = {
+  id: string;
+  chat_id: string;
+  sender_id?: string;
+  client_message_id: string;
+  sequence: number;
+  type: 'text' | 'image' | 'system';
+  body: string;
+  reply_to_id?: string;
+  created_at: string;
+  edited_at?: string;
+  deleted_at?: string;
+};
+
+export type ChatSummary = {
+  chat_id: string;
+  kind: 'direct' | 'group';
+  title: string;
+  peer_username?: string;
+  peer_display_name?: string;
+  last_message?: ChatMessage;
+  last_read_sequence: number;
+  unread_count: number;
+  updated_at: string;
+};
+
 export function getAccessToken() {
   if (typeof window === 'undefined') return null;
   return window.sessionStorage.getItem(ACCESS_KEY);
@@ -105,10 +131,7 @@ export async function startYandexLogin(): Promise<string> {
 
 export async function refreshSession(): Promise<SessionPayload | null> {
   const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-    cache: 'no-store'
+    method: 'POST', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store'
   });
   if (!response.ok) {
     setAccessToken(null);
@@ -169,5 +192,43 @@ export async function setFollow(username: string, follow: boolean) {
 
 export async function setBlock(username: string, block: boolean) {
   const response = await request(`/api/v1/profiles/${encodeURIComponent(username)}/block`, { method: block ? 'POST' : 'DELETE' });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function listChats(before = ''): Promise<ChatSummary[]> {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  const response = await request(`/api/v1/chats${query}`);
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { items: ChatSummary[] };
+  return payload.items;
+}
+
+export async function ensureDirectChat(username: string): Promise<ChatSummary> {
+  const response = await request('/api/v1/chats/direct', { method: 'POST', body: JSON.stringify({ username }) });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<ChatSummary>;
+}
+
+export async function listMessages(chatId: string, beforeSequence?: number): Promise<ChatMessage[]> {
+  const query = beforeSequence ? `?before_sequence=${beforeSequence}` : '';
+  const response = await request(`/api/v1/chats/${encodeURIComponent(chatId)}/messages${query}`);
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { items: ChatMessage[] };
+  return payload.items;
+}
+
+export async function sendTextMessage(chatId: string, text: string, clientMessageId = crypto.randomUUID(), replyToId = ''): Promise<{ message: ChatMessage; duplicate: boolean }> {
+  const response = await request(`/api/v1/chats/${encodeURIComponent(chatId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ client_message_id: clientMessageId, text, reply_to_id: replyToId })
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<{ message: ChatMessage; duplicate: boolean }>;
+}
+
+export async function markChatRead(chatId: string, sequence: number) {
+  const response = await request(`/api/v1/chats/${encodeURIComponent(chatId)}/read`, {
+    method: 'POST', body: JSON.stringify({ sequence })
+  });
   if (!response.ok) throw new Error(await parseError(response));
 }
