@@ -58,6 +58,7 @@ func main() {
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.SetReadiness(pool.Ping)
+	app.SetAllowedOrigin(cfg.WebOrigin)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
