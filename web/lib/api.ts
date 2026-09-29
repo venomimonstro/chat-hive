@@ -19,6 +19,18 @@ export type Profile = {
   interests: string[];
   completed: boolean;
 };
+export type PublicProfile = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  bio: string;
+  interests: string[];
+  followers_count: number;
+  following_count: number;
+  is_following: boolean;
+  is_blocked: boolean;
+  is_self: boolean;
+};
 
 export function getAccessToken() {
   if (typeof window === 'undefined') return null;
@@ -120,4 +132,20 @@ export async function completeOnboarding(input: { username: string; display_name
   const response = await request('/api/v1/me/onboarding', { method: 'PUT', body: JSON.stringify(input) });
   if (!response.ok) throw new Error(await parseError(response));
   return response.json() as Promise<Profile>;
+}
+
+export async function getPublicProfile(username: string): Promise<PublicProfile> {
+  const response = await request(`/api/v1/profiles/${encodeURIComponent(username)}`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<PublicProfile>;
+}
+
+export async function setFollow(username: string, follow: boolean) {
+  const response = await request(`/api/v1/profiles/${encodeURIComponent(username)}/follow`, { method: follow ? 'POST' : 'DELETE' });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function setBlock(username: string, block: boolean) {
+  const response = await request(`/api/v1/profiles/${encodeURIComponent(username)}/block`, { method: block ? 'POST' : 'DELETE' });
+  if (!response.ok) throw new Error(await parseError(response));
 }
