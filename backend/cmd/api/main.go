@@ -25,10 +25,6 @@ func main() {
 		logger.Error("configuration error", "error", err)
 		os.Exit(1)
 	}
-	if cfg.Environment == "production" {
-		logger.Error("production magic-link transport is not configured")
-		os.Exit(1)
-	}
 
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelStartup()
@@ -45,11 +41,23 @@ func main() {
 	}
 
 	store := identity.NewPostgresStore(pool)
-	sender, err := identity.NewLogMagicLinkSender(logger, cfg.MagicLinkBaseURL)
+	var sender identity.MagicLinkSender
+	if cfg.Environment == "production" {
+		sender, err = identity.NewSMTPMagicLinkSender(identity.SMTPConfig{
+			Addr:     cfg.SMTPAddr,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+			BaseURL:  cfg.MagicLinkBaseURL,
+		})
+	} else {
+		sender, err = identity.NewLogMagicLinkSender(logger, cfg.MagicLinkBaseURL)
+	}
 	if err != nil {
 		logger.Error("magic link sender configuration failed", "error", err)
 		os.Exit(1)
 	}
+
 	identityService := identity.NewService(store, sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
 	if cfg.YandexClientID != "" {
