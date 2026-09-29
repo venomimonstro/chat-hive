@@ -31,6 +31,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/auth/yandex/callback", h.completeYandex)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refreshSession)
 	mux.HandleFunc("GET /api/v1/auth/session", h.currentSession)
+	mux.HandleFunc("GET /api/v1/auth/sessions", h.listSessions)
 	mux.HandleFunc("DELETE /api/v1/auth/sessions/{session_id}", h.revokeSession)
 }
 
@@ -163,6 +164,20 @@ func (h *HTTPHandler) currentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
+}
+
+func (h *HTTPHandler) listSessions(w http.ResponseWriter, r *http.Request) {
+	current, ok := h.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.service.ListSessions(r.Context(), current.UserID)
+	if err != nil {
+		h.logger.Error("list sessions failed", "error", err, "user_id", current.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "current_session_id": current.SessionID})
 }
 
 func (h *HTTPHandler) revokeSession(w http.ResponseWriter, r *http.Request) {
