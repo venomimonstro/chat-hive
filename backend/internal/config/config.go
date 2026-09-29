@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -13,6 +14,7 @@ type Config struct {
 	RedisAddr        string
 	NATSURL          string
 	MagicLinkBaseURL string
+	WebOrigin        string
 	CookieSecure     bool
 }
 
@@ -24,7 +26,8 @@ func Load() (Config, error) {
 		DatabaseURL:      env("CHAT_DATABASE_URL", "postgres://chat:chat@localhost:5432/chat?sslmode=disable"),
 		RedisAddr:        env("CHAT_REDIS_ADDR", "localhost:6379"),
 		NATSURL:          env("CHAT_NATS_URL", "nats://localhost:4222"),
-		MagicLinkBaseURL: env("CHAT_MAGIC_LINK_BASE_URL", "http://localhost:3000/auth/complete"),
+		MagicLinkBaseURL: env("CHAT_MAGIC_LINK_BASE_URL", "http://localhost:3000/auth/callback"),
+		WebOrigin:        strings.TrimRight(env("CHAT_WEB_ORIGIN", "http://localhost:3000"), "/"),
 		CookieSecure:     environment != "development" && environment != "test",
 	}
 
@@ -34,10 +37,24 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return Config{}, fmt.Errorf("CHAT_DATABASE_URL must not be empty")
 	}
-	if cfg.Environment == "production" && strings.HasPrefix(cfg.MagicLinkBaseURL, "http://") {
-		return Config{}, fmt.Errorf("production magic link base URL must use HTTPS")
+	if err := validateHTTPURL(cfg.WebOrigin, cfg.Environment == "production"); err != nil {
+		return Config{}, fmt.Errorf("CHAT_WEB_ORIGIN: %w", err)
+	}
+	if err := validateHTTPURL(cfg.MagicLinkBaseURL, cfg.Environment == "production"); err != nil {
+		return Config{}, fmt.Errorf("CHAT_MAGIC_LINK_BASE_URL: %w", err)
 	}
 	return cfg, nil
+}
+
+func validateHTTPURL(value string, requireHTTPS bool) error {
+	u, err := url.Parse(value)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("must be an absolute http(s) URL")
+	}
+	if requireHTTPS && u.Scheme != "https" {
+		return fmt.Errorf("must use HTTPS in production")
+	}
+	return nil
 }
 
 func env(key, fallback string) string {
