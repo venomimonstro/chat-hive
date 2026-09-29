@@ -17,6 +17,10 @@ type Config struct {
 	WebOrigin         string
 	YandexClientID    string
 	YandexRedirectURL string
+	SMTPAddr          string
+	SMTPUsername      string
+	SMTPPassword      string
+	SMTPFrom          string
 	CookieSecure      bool
 }
 
@@ -32,6 +36,10 @@ func Load() (Config, error) {
 		WebOrigin:         strings.TrimRight(env("CHAT_WEB_ORIGIN", "http://localhost:3000"), "/"),
 		YandexClientID:    strings.TrimSpace(env("CHAT_YANDEX_CLIENT_ID", "")),
 		YandexRedirectURL: env("CHAT_YANDEX_REDIRECT_URL", "http://localhost:8080/api/v1/auth/yandex/callback"),
+		SMTPAddr:          strings.TrimSpace(env("CHAT_SMTP_ADDR", "")),
+		SMTPUsername:      strings.TrimSpace(env("CHAT_SMTP_USERNAME", "")),
+		SMTPPassword:      env("CHAT_SMTP_PASSWORD", ""),
+		SMTPFrom:          strings.TrimSpace(env("CHAT_SMTP_FROM", "")),
 		CookieSecure:      environment != "development" && environment != "test",
 	}
 
@@ -50,6 +58,14 @@ func Load() (Config, error) {
 	if cfg.YandexClientID != "" {
 		if err := validateHTTPURL(cfg.YandexRedirectURL, cfg.Environment == "production"); err != nil {
 			return Config{}, fmt.Errorf("CHAT_YANDEX_REDIRECT_URL: %w", err)
+		}
+	}
+	if cfg.SMTPUsername != "" && cfg.SMTPPassword == "" {
+		return Config{}, fmt.Errorf("CHAT_SMTP_PASSWORD is required when CHAT_SMTP_USERNAME is set")
+	}
+	if cfg.Environment == "production" {
+		if cfg.SMTPAddr == "" || cfg.SMTPFrom == "" {
+			return Config{}, fmt.Errorf("CHAT_SMTP_ADDR and CHAT_SMTP_FROM are required in production")
 		}
 	}
 	return cfg, nil
