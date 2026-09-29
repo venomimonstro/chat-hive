@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - name: Format check
         run: |
           unformatted="$(gofmt -l .)"
@@ -32,14 +32,8 @@ jobs:
       - name: Module integrity
         run: |
           go mod tidy
-          echo '--- BEGIN GENERATED go.mod ---'
-          cat go.mod
-          echo '--- END GENERATED go.mod ---'
-          echo '--- BEGIN GENERATED go.sum ---'
-          cat go.sum
-          echo '--- END GENERATED go.sum ---'
-          git diff --exit-code -- go.mod
-          git ls-files --error-unmatch go.sum >/dev/null
+          git diff -- go.mod go.sum
+          git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       - name: Test
