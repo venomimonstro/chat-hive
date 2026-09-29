@@ -15,6 +15,7 @@ import (
 var (
 	ErrInvalidChallenge = errors.New("invalid or expired login challenge")
 	ErrInvalidSession   = errors.New("invalid or expired session")
+	ErrRefreshReuse     = errors.New("refresh token reuse detected")
 	ErrRateLimited      = errors.New("too many login attempts")
 )
 
@@ -24,6 +25,7 @@ type Store interface {
 	ConsumeLoginChallenge(ctx context.Context, tokenHash []byte, now time.Time) (userID string, err error)
 	CreateSession(ctx context.Context, input CreateSessionInput) (string, error)
 	FindSessionByAccessTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (AuthenticatedSession, error)
+	RotateRefreshToken(ctx context.Context, input RotateSessionInput) (AuthenticatedSession, error)
 	RevokeSession(ctx context.Context, userID, sessionID string, now time.Time) (bool, error)
 }
 
@@ -39,6 +41,15 @@ type CreateSessionInput struct {
 	IP               string
 	AccessExpiresAt  time.Time
 	RefreshExpiresAt time.Time
+}
+
+type RotateSessionInput struct {
+	OldRefreshTokenHash []byte
+	NewRefreshTokenHash []byte
+	NewAccessTokenHash  []byte
+	AccessExpiresAt     time.Time
+	RefreshExpiresAt    time.Time
+	Now                 time.Time
 }
 
 type AuthenticatedSession struct {
@@ -114,8 +125,7 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 	}
 
 	now := s.now()
-	tokenHash := hashToken(rawToken)
-	userID, err := s.store.ConsumeLoginChallenge(ctx, tokenHash, now)
+	userID, err := s.store.ConsumeLoginChallenge(ctx, hashToken(rawToken), now)
 	if err != nil {
 		if errors.Is(err, ErrInvalidChallenge) {
 			return SessionTokens{}, ErrInvalidChallenge
@@ -123,38 +133,58 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 		return SessionTokens{}, fmt.Errorf("consume login challenge: %w", err)
 	}
 
-	accessToken, accessHash, err := newToken()
+	tokens, accessHash, refreshHash, err := s.newSessionTokens(now)
 	if err != nil {
-		return SessionTokens{}, fmt.Errorf("generate access token: %w", err)
+		return SessionTokens{}, err
 	}
-	refreshToken, refreshHash, err := newToken()
-	if err != nil {
-		return SessionTokens{}, fmt.Errorf("generate refresh token: %w", err)
-	}
+	tokens.UserID = userID
 
-	accessExpiry := now.Add(s.accessTTL)
-	refreshExpiry := now.Add(s.refreshTTL)
 	sessionID, err := s.store.CreateSession(ctx, CreateSessionInput{
 		UserID:           userID,
 		AccessTokenHash:  accessHash,
 		RefreshTokenHash: refreshHash,
 		UserAgent:        truncate(userAgent, 512),
 		IP:               requestIP,
-		AccessExpiresAt:  accessExpiry,
-		RefreshExpiresAt: refreshExpiry,
+		AccessExpiresAt:  tokens.AccessExpiry,
+		RefreshExpiresAt: tokens.RefreshExpiry,
 	})
 	if err != nil {
 		return SessionTokens{}, fmt.Errorf("create session: %w", err)
 	}
+	tokens.SessionID = sessionID
+	return tokens, nil
+}
 
-	return SessionTokens{
-		UserID:        userID,
-		SessionID:     sessionID,
-		AccessToken:   accessToken,
-		RefreshToken:  refreshToken,
-		AccessExpiry:  accessExpiry,
-		RefreshExpiry: refreshExpiry,
-	}, nil
+func (s *Service) RefreshSession(ctx context.Context, rawRefreshToken string) (SessionTokens, error) {
+	rawRefreshToken = strings.TrimSpace(rawRefreshToken)
+	if rawRefreshToken == "" || len(rawRefreshToken) > 512 {
+		return SessionTokens{}, ErrInvalidSession
+	}
+
+	now := s.now()
+	tokens, accessHash, refreshHash, err := s.newSessionTokens(now)
+	if err != nil {
+		return SessionTokens{}, err
+	}
+
+	session, err := s.store.RotateRefreshToken(ctx, RotateSessionInput{
+		OldRefreshTokenHash: hashToken(rawRefreshToken),
+		NewRefreshTokenHash: refreshHash,
+		NewAccessTokenHash:  accessHash,
+		AccessExpiresAt:     tokens.AccessExpiry,
+		RefreshExpiresAt:    tokens.RefreshExpiry,
+		Now:                 now,
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidSession) || errors.Is(err, ErrRefreshReuse) {
+			return SessionTokens{}, err
+		}
+		return SessionTokens{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
+	tokens.UserID = session.UserID
+	tokens.SessionID = session.SessionID
+	return tokens, nil
 }
 
 func (s *Service) AuthenticateAccessToken(ctx context.Context, rawToken string) (AuthenticatedSession, error) {
@@ -184,6 +214,23 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) e
 		return ErrInvalidSession
 	}
 	return nil
+}
+
+func (s *Service) newSessionTokens(now time.Time) (SessionTokens, []byte, []byte, error) {
+	accessToken, accessHash, err := newToken()
+	if err != nil {
+		return SessionTokens{}, nil, nil, fmt.Errorf("generate access token: %w", err)
+	}
+	refreshToken, refreshHash, err := newToken()
+	if err != nil {
+		return SessionTokens{}, nil, nil, fmt.Errorf("generate refresh token: %w", err)
+	}
+	return SessionTokens{
+		AccessToken:   accessToken,
+		RefreshToken:  refreshToken,
+		AccessExpiry:  now.Add(s.accessTTL),
+		RefreshExpiry: now.Add(s.refreshTTL),
+	}, accessHash, refreshHash, nil
 }
 
 func normalizeEmail(value string) (string, error) {
