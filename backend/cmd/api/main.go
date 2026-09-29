@@ -13,6 +13,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/config"
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
+	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 )
 
 func main() {
@@ -24,7 +25,6 @@ func main() {
 		os.Exit(1)
 	}
 	if cfg.Environment == "production" {
-		// Sprint 03 intentionally fails closed until a real production mail transport is configured.
 		logger.Error("production magic-link transport is not configured")
 		os.Exit(1)
 	}
@@ -51,8 +51,12 @@ func main() {
 	identityService := identity.NewService(identity.NewPostgresStore(pool), sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
 
+	onboardingService := onboarding.NewService(onboarding.NewPostgresStore(pool))
+	onboardingHTTP := onboarding.NewHTTPHandler(onboardingService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
+	app.Register(onboardingHTTP.Register)
 	app.SetReadiness(pool.Ping)
 
 	server := &http.Server{
