@@ -82,9 +82,9 @@ func (h *HTTPHandler) completeEmail(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":          tokens.UserID,
-		"session_id":       tokens.SessionID,
-		"access_token":     tokens.AccessToken,
+		"user_id":           tokens.UserID,
+		"session_id":        tokens.SessionID,
+		"access_token":      tokens.AccessToken,
 		"access_expires_at": tokens.AccessExpiry,
 	})
 }
