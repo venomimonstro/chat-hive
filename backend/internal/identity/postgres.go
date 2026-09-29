@@ -116,3 +116,33 @@ func (s *PostgresStore) CreateSession(ctx context.Context, input CreateSessionIn
 	}
 	return sessionID, nil
 }
+
+func (s *PostgresStore) FindSessionByAccessTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (AuthenticatedSession, error) {
+	const query = `
+		SELECT user_id::text, id::text, access_expires_at
+		FROM sessions
+		WHERE access_token_hash = $1
+		  AND revoked_at IS NULL
+		  AND access_expires_at > $2
+		  AND expires_at > $2`
+	var session AuthenticatedSession
+	if err := s.pool.QueryRow(ctx, query, tokenHash, now).Scan(&session.UserID, &session.SessionID, &session.ExpiresAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AuthenticatedSession{}, ErrInvalidSession
+		}
+		return AuthenticatedSession{}, err
+	}
+	return session, nil
+}
+
+func (s *PostgresStore) RevokeSession(ctx context.Context, userID, sessionID string, now time.Time) (bool, error) {
+	const query = `
+		UPDATE sessions
+		SET revoked_at = $3, access_token_hash = NULL
+		WHERE id = $1::uuid AND user_id = $2::uuid AND revoked_at IS NULL`
+	result, err := s.pool.Exec(ctx, query, sessionID, userID, now)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() == 1, nil
+}
