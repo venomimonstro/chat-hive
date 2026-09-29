@@ -1,0 +1,82 @@
+package social
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+var (
+	ErrProfileNotFound = errors.New("profile not found")
+	ErrInteractionDenied = errors.New("interaction denied")
+)
+
+type PublicProfile struct {
+	UserID         string   `json:"user_id"`
+	Username       string   `json:"username"`
+	DisplayName    string   `json:"display_name"`
+	Bio            string   `json:"bio"`
+	Interests      []string `json:"interests"`
+	FollowersCount int64    `json:"followers_count"`
+	FollowingCount int64    `json:"following_count"`
+	IsFollowing    bool     `json:"is_following"`
+	IsBlocked      bool     `json:"is_blocked"`
+	IsSelf         bool     `json:"is_self"`
+}
+
+type Store interface {
+	GetProfile(ctx context.Context, viewerID, username string) (PublicProfile, error)
+	SetFollow(ctx context.Context, followerID, username string, follow bool) error
+	SetBlock(ctx context.Context, blockerID, username string, block bool) error
+}
+
+type Service struct{ store Store }
+
+func NewService(store Store) *Service { return &Service{store: store} }
+
+func (s *Service) GetProfile(ctx context.Context, viewerID, username string) (PublicProfile, error) {
+	username = normalizeUsername(username)
+	if username == "" { return PublicProfile{}, ErrProfileNotFound }
+	return s.store.GetProfile(ctx, viewerID, username)
+}
+
+func (s *Service) Follow(ctx context.Context, userID, username string) error {
+	return s.setFollow(ctx, userID, username, true)
+}
+
+func (s *Service) Unfollow(ctx context.Context, userID, username string) error {
+	return s.setFollow(ctx, userID, username, false)
+}
+
+func (s *Service) setFollow(ctx context.Context, userID, username string, follow bool) error {
+	username = normalizeUsername(username)
+	if strings.TrimSpace(userID) == "" || username == "" { return ErrInteractionDenied }
+	if err := s.store.SetFollow(ctx, userID, username, follow); err != nil {
+		if errors.Is(err, ErrProfileNotFound) || errors.Is(err, ErrInteractionDenied) { return err }
+		return fmt.Errorf("set follow: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) Block(ctx context.Context, userID, username string) error {
+	return s.setBlock(ctx, userID, username, true)
+}
+
+func (s *Service) Unblock(ctx context.Context, userID, username string) error {
+	return s.setBlock(ctx, userID, username, false)
+}
+
+func (s *Service) setBlock(ctx context.Context, userID, username string, block bool) error {
+	username = normalizeUsername(username)
+	if strings.TrimSpace(userID) == "" || username == "" { return ErrInteractionDenied }
+	if err := s.store.SetBlock(ctx, userID, username, block); err != nil {
+		if errors.Is(err, ErrProfileNotFound) || errors.Is(err, ErrInteractionDenied) { return err }
+		return fmt.Errorf("set block: %w", err)
+	}
+	return nil
+}
+
+func normalizeUsername(value string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+}
