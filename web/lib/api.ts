@@ -87,6 +87,13 @@ export async function completeEmailLogin(token: string): Promise<SessionPayload>
   return payload;
 }
 
+export async function startYandexLogin(): Promise<string> {
+  const response = await request('/api/v1/auth/yandex/start', {}, false);
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { authorization_url: string };
+  return payload.authorization_url;
+}
+
 export async function refreshSession(): Promise<SessionPayload | null> {
   const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
     method: 'POST',
