@@ -16,6 +16,7 @@ type fakeStore struct {
 	session        CreateSessionInput
 	sessionID      string
 	sessionRevoked bool
+	refreshHistory [][]byte
 }
 
 func (f *fakeStore) CountRecentChallenges(context.Context, string, string, time.Time) (int, error) {
@@ -47,6 +48,30 @@ func (f *fakeStore) FindSessionByAccessTokenHash(_ context.Context, tokenHash []
 		SessionID: f.sessionID,
 		ExpiresAt: f.session.AccessExpiresAt,
 	}, nil
+}
+func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInput) (AuthenticatedSession, error) {
+	if f.sessionRevoked {
+		return AuthenticatedSession{}, ErrInvalidSession
+	}
+	if bytes.Equal(input.OldRefreshTokenHash, f.session.RefreshTokenHash) {
+		f.refreshHistory = append(f.refreshHistory, append([]byte(nil), f.session.RefreshTokenHash...))
+		f.session.RefreshTokenHash = append([]byte(nil), input.NewRefreshTokenHash...)
+		f.session.AccessTokenHash = append([]byte(nil), input.NewAccessTokenHash...)
+		f.session.AccessExpiresAt = input.AccessExpiresAt
+		f.session.RefreshExpiresAt = input.RefreshExpiresAt
+		return AuthenticatedSession{
+			UserID:    f.session.UserID,
+			SessionID: f.sessionID,
+			ExpiresAt: input.AccessExpiresAt,
+		}, nil
+	}
+	for _, consumed := range f.refreshHistory {
+		if bytes.Equal(input.OldRefreshTokenHash, consumed) {
+			f.sessionRevoked = true
+			return AuthenticatedSession{}, ErrRefreshReuse
+		}
+	}
+	return AuthenticatedSession{}, ErrInvalidSession
 }
 func (f *fakeStore) RevokeSession(_ context.Context, userID, sessionID string, _ time.Time) (bool, error) {
 	if f.sessionRevoked || userID != f.session.UserID || sessionID != f.sessionID {
@@ -104,19 +129,7 @@ func TestMagicLinkIsHashedAndSingleUse(t *testing.T) {
 }
 
 func TestAccessSessionCanBeValidatedAndRevoked(t *testing.T) {
-	store := &fakeStore{}
-	sender := &fakeSender{}
-	service := NewService(store, sender)
-	fixedNow := time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC)
-	service.now = func() time.Time { return fixedNow }
-
-	if err := service.StartEmailLogin(context.Background(), "user@example.com", "127.0.0.1"); err != nil {
-		t.Fatal(err)
-	}
-	tokens, err := service.CompleteEmailLogin(context.Background(), sender.token, "test-agent", "127.0.0.1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, service, tokens := authenticatedFixture(t)
 
 	session, err := service.AuthenticateAccessToken(context.Background(), tokens.AccessToken)
 	if err != nil {
@@ -131,6 +144,37 @@ func TestAccessSessionCanBeValidatedAndRevoked(t *testing.T) {
 	}
 	if _, err := service.AuthenticateAccessToken(context.Background(), tokens.AccessToken); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("revoked session still authenticated: %v", err)
+	}
+	if !store.sessionRevoked {
+		t.Fatal("store did not revoke session")
+	}
+}
+
+func TestRefreshRotationRejectsReplayAndRevokesSession(t *testing.T) {
+	store, service, original := authenticatedFixture(t)
+
+	rotated, err := service.RefreshSession(context.Background(), original.RefreshToken)
+	if err != nil {
+		t.Fatalf("refresh session: %v", err)
+	}
+	if rotated.RefreshToken == original.RefreshToken || rotated.AccessToken == original.AccessToken {
+		t.Fatal("refresh must rotate both access and refresh credentials")
+	}
+	if _, err := service.AuthenticateAccessToken(context.Background(), original.AccessToken); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("old access token remained valid after rotation: %v", err)
+	}
+	if _, err := service.AuthenticateAccessToken(context.Background(), rotated.AccessToken); err != nil {
+		t.Fatalf("new access token rejected: %v", err)
+	}
+
+	if _, err := service.RefreshSession(context.Background(), original.RefreshToken); !errors.Is(err, ErrRefreshReuse) {
+		t.Fatalf("expected replay detection, got %v", err)
+	}
+	if !store.sessionRevoked {
+		t.Fatal("refresh replay must revoke the session")
+	}
+	if _, err := service.AuthenticateAccessToken(context.Background(), rotated.AccessToken); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("session remained valid after refresh replay: %v", err)
 	}
 }
 
@@ -147,4 +191,22 @@ func TestInvalidEmailRejected(t *testing.T) {
 	if err := service.StartEmailLogin(context.Background(), "not-an-email", "127.0.0.1"); err == nil {
 		t.Fatal("expected invalid email error")
 	}
+}
+
+func authenticatedFixture(t *testing.T) (*fakeStore, *Service, SessionTokens) {
+	t.Helper()
+	store := &fakeStore{}
+	sender := &fakeSender{}
+	service := NewService(store, sender)
+	fixedNow := time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return fixedNow }
+
+	if err := service.StartEmailLogin(context.Background(), "user@example.com", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := service.CompleteEmailLogin(context.Background(), sender.token, "test-agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, service, tokens
 }
