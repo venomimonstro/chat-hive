@@ -10,6 +10,15 @@ type SessionPayload = {
   access_expires_at: string;
 };
 
+export type DeviceSession = {
+  session_id: string;
+  user_agent: string;
+  last_ip: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+};
+
 export type Interest = { slug: string; label_ru: string; label_en: string };
 export type Profile = {
   user_id: string;
@@ -116,10 +125,16 @@ export async function getCurrentSession() {
   return response.json() as Promise<{ user_id: string; session_id: string; expires_at: string }>;
 }
 
-export async function revokeSession(sessionId: string) {
+export async function listSessions(): Promise<{ items: DeviceSession[]; current_session_id: string }> {
+  const response = await request('/api/v1/auth/sessions');
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<{ items: DeviceSession[]; current_session_id: string }>;
+}
+
+export async function revokeSession(sessionId: string, isCurrent = false) {
   const response = await request(`/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
   if (!response.ok && response.status !== 404) throw new Error(await parseError(response));
-  setAccessToken(null);
+  if (isCurrent) setAccessToken(null);
 }
 
 export async function listInterests(): Promise<Interest[]> {
