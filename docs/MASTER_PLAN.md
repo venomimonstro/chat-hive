@@ -34,8 +34,8 @@ Permanent product constraints:
 |---|---|---|
 | 00 | Product/architecture/security source of truth | DONE |
 | 01 | Repository, local infrastructure, backend/frontend skeleton, CI | DONE |
-| 02 | Design system and responsive application shell | IN PROGRESS |
-| 03 | Identity: email magic-link, sessions, Yandex ID foundation, passkeys | PLANNED |
+| 02 | Design system and responsive application shell | DONE |
+| 03 | Identity: email magic-link, sessions, Yandex ID foundation, passkeys | IN PROGRESS |
 | 04 | Onboarding: username, avatar, interests, initial discovery seed | PLANNED |
 | 05 | Profiles and social graph | PLANNED |
 | 06 | Realtime gateway | PLANNED |
@@ -66,18 +66,21 @@ Permanent product constraints:
 
 ## Completed foundation
 
-Sprint 00–01 was merged only after CI passed frontend typecheck/build and backend formatting/vet/race tests. The repository now contains the authoritative architecture/security/data/API rules, local PostgreSQL/Redis/NATS stack, initial account/session migration, Go API skeleton and mobile-first Next.js shell.
+Sprint 00–02 are merged to `main` after green backend/frontend CI. The repository now has architecture/security/data/API rules, local PostgreSQL/Redis/NATS infrastructure, initial account/session schema, Go API, mobile-first Next.js shell and a reusable light/dark design system.
 
-## Sprint 02 acceptance criteria
+## Sprint 03 acceptance criteria
 
-- Design tokens cover color, spacing, typography, radius, motion and elevation.
-- Reusable primitives exist for Button, IconButton, Avatar, Badge, SearchField, Surface/Card, Skeleton, EmptyState and Sheet/Modal foundation.
-- Responsive `AppShell` owns the permanent four-zone navigation rather than individual pages.
-- Light/dark modes are token-driven and accessible.
-- Touch targets are at least 44px for primary interactive controls.
-- Focus-visible states exist for keyboard accessibility.
-- The existing Chats preview is refactored to use design-system primitives instead of one-off markup/styles.
-- Frontend typecheck/build remain green.
+- Email magic-link start and completion flow is persistent in PostgreSQL.
+- Raw login/access/refresh tokens are never stored; only hashes are persisted.
+- Magic links are one-time and expire after 15 minutes.
+- Start endpoint rate-limits recent requests by email/IP and does not reveal account existence.
+- Existing email identity logs into the same user; a first verified login creates a user + email identity atomically.
+- Session model has independent short-lived access and long-lived refresh credentials and server-side revocation state.
+- Refresh credential is delivered in an HttpOnly SameSite cookie; production cookies require Secure.
+- Production fails closed until a real mail transport is configured; development-only token logging cannot silently become production behavior.
+- Database readiness is reflected by `/health/ready`.
+- Unit tests cover hashing, normalization, rate limiting and one-time challenge consumption.
+- Yandex ID and WebAuthn/passkey extension points are documented without prematurely coupling them to email login.
 
 ## Definition of Done for every feature sprint
 
@@ -110,4 +113,4 @@ Before implementing a sprint, an AI agent must:
 
 ## Current next action
 
-Complete Sprint 02 Design System and responsive application shell, verify CI, then begin Sprint 03 Identity.
+Finish Sprint 03 Identity, verify migrations and CI, then begin Sprint 04 onboarding.

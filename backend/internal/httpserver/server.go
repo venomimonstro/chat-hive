@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -9,8 +10,9 @@ import (
 )
 
 type Server struct {
-	logger *slog.Logger
-	mux    *http.ServeMux
+	logger    *slog.Logger
+	mux       *http.ServeMux
+	readiness func(context.Context) error
 }
 
 type healthResponse struct {
@@ -24,6 +26,14 @@ func New(logger *slog.Logger) *Server {
 	return s
 }
 
+func (s *Server) Register(register func(*http.ServeMux)) {
+	register(s.mux)
+}
+
+func (s *Server) SetReadiness(check func(context.Context) error) {
+	s.readiness = check
+}
+
 func (s *Server) Handler() http.Handler {
 	return recoverMiddleware(s.logger, requestIDMiddleware(securityHeaders(s.mux)))
 }
@@ -32,8 +42,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Service: "chat-api"})
 	})
-	s.mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
-		// Dependency probes are added when durable adapters are wired in Sprint 01/03.
+	s.mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
+		if s.readiness != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := s.readiness(ctx); err != nil {
+				s.logger.Warn("readiness check failed", "error", err)
+				writeJSON(w, http.StatusServiceUnavailable, healthResponse{Status: "not_ready", Service: "chat-api"})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ready", Service: "chat-api"})
 	})
 	s.mux.HandleFunc("GET /api/v1", func(w http.ResponseWriter, _ *http.Request) {

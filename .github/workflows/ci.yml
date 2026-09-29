@@ -20,9 +20,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - name: Format check
-        run: test -z "$(gofmt -l .)"
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Module integrity
+        run: |
+          go mod tidy
+          git diff -- go.mod go.sum
+          git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       - name: Test
