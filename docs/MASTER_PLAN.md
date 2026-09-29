@@ -28,15 +28,19 @@ Permanent product constraints:
 - Media: S3-compatible object storage + CDN.
 - Deployment: Docker first; no Kubernetes until operational load justifies it.
 
+## Delivery mode
+
+Development currently proceeds directly in `main` at owner request. GitHub Actions/CI workflow has been removed. Code-quality gates remain part of the Definition of Done and must be run locally/server-side before production deployment even while repository development is direct-to-main.
+
 ## Sprint status
 
 | Sprint | Scope | Status |
 |---|---|---|
 | 00 | Product/architecture/security source of truth | DONE |
-| 01 | Repository, local infrastructure, backend/frontend skeleton, CI | DONE |
+| 01 | Repository, local infrastructure, backend/frontend skeleton | DONE |
 | 02 | Design system and responsive application shell | DONE |
-| 03 | Identity: email magic-link, sessions, Yandex ID foundation, passkeys | IN PROGRESS |
-| 04 | Onboarding: username, avatar, interests, initial discovery seed | PLANNED |
+| 03 | Identity: email magic-link, session rotation/revocation, Yandex ID foundation, passkeys | IN PROGRESS |
+| 04 | Onboarding: username, profile, interests, initial discovery seed | IN PROGRESS |
 | 05 | Profiles and social graph | PLANNED |
 | 06 | Realtime gateway | PLANNED |
 | 07 | Direct messaging core | PLANNED |
@@ -64,23 +68,29 @@ Permanent product constraints:
 | 29 | Product iteration from measured activation/retention | PLANNED |
 | 30 | Public beta gate | PLANNED |
 
-## Completed foundation
+## Implemented foundation
 
-Sprint 00–02 are merged to `main` after green backend/frontend CI. The repository now has architecture/security/data/API rules, local PostgreSQL/Redis/NATS infrastructure, initial account/session schema, Go API, mobile-first Next.js shell and a reusable light/dark design system.
+The repository now contains the architecture/security/data/API rules, local PostgreSQL/Redis/NATS stack, Go API, mobile-first Next.js shell and reusable design system. Identity currently includes persistent email magic links, hashed one-time challenges, short-lived access credentials, HttpOnly refresh credentials, server-side session validation/revocation, refresh rotation and replay detection. The web client includes login, magic-link callback, automatic refresh and session-aware API access.
 
-## Sprint 03 acceptance criteria
+Sprint 04 now includes persistent interests, profile onboarding schema/API and a mobile-first onboarding screen with username, display name, bio and 3–12 interest selection.
 
-- Email magic-link start and completion flow is persistent in PostgreSQL.
-- Raw login/access/refresh tokens are never stored; only hashes are persisted.
-- Magic links are one-time and expire after 15 minutes.
-- Start endpoint rate-limits recent requests by email/IP and does not reveal account existence.
-- Existing email identity logs into the same user; a first verified login creates a user + email identity atomically.
-- Session model has independent short-lived access and long-lived refresh credentials and server-side revocation state.
-- Refresh credential is delivered in an HttpOnly SameSite cookie; production cookies require Secure.
-- Production fails closed until a real mail transport is configured; development-only token logging cannot silently become production behavior.
-- Database readiness is reflected by `/health/ready`.
-- Unit tests cover hashing, normalization, rate limiting and one-time challenge consumption.
-- Yandex ID and WebAuthn/passkey extension points are documented without prematurely coupling them to email login.
+## Sprint 03 remaining
+
+- Yandex ID OAuth adapter and connection flow.
+- Passkey/WebAuthn credential storage and endpoint foundation.
+- Production mail transport abstraction implementation.
+- Session/device list endpoint for Trust Center reuse.
+
+## Sprint 04 acceptance criteria
+
+- New account can complete onboarding after first login.
+- Username validation and case-insensitive uniqueness are enforced server-side.
+- Display name and bio limits are server-side enforced.
+- User chooses 3–12 active interests.
+- Profile and interests are stored atomically.
+- Completed onboarding can be detected through `/api/v1/me/profile`.
+- Mobile onboarding UI handles loading, validation, conflict and error states.
+- Onboarding data is ready to seed discovery without introducing ML dependency.
 
 ## Definition of Done for every feature sprint
 
@@ -107,10 +117,10 @@ Before implementing a sprint, an AI agent must:
 3. Preserve working behavior unless the sprint explicitly replaces it.
 4. Minimize new dependencies and justify each one.
 5. Never invent custom cryptography.
-6. Never bypass failing tests/security controls to make CI green.
+6. Never bypass validation/security controls to make code appear complete.
 7. Never use production credentials/data.
 8. Update documentation and sprint status after implementation.
 
 ## Current next action
 
-Finish Sprint 03 Identity, verify migrations and CI, then begin Sprint 04 onboarding.
+Finish remaining Sprint 03 external identity/security pieces while continuing Sprint 04, then start Sprint 05 profiles/social graph directly in `main`.
