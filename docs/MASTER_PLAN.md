@@ -32,9 +32,9 @@ Permanent product constraints:
 
 | Sprint | Scope | Status |
 |---|---|---|
-| 00 | Product/architecture/security source of truth | IN PROGRESS |
-| 01 | Repository, local infrastructure, backend/frontend skeleton, CI | IN PROGRESS |
-| 02 | Design system and responsive application shell | PLANNED |
+| 00 | Product/architecture/security source of truth | DONE |
+| 01 | Repository, local infrastructure, backend/frontend skeleton, CI | DONE |
+| 02 | Design system and responsive application shell | IN PROGRESS |
 | 03 | Identity: email magic-link, sessions, Yandex ID foundation, passkeys | PLANNED |
 | 04 | Onboarding: username, avatar, interests, initial discovery seed | PLANNED |
 | 05 | Profiles and social graph | PLANNED |
@@ -64,25 +64,20 @@ Permanent product constraints:
 | 29 | Product iteration from measured activation/retention | PLANNED |
 | 30 | Public beta gate | PLANNED |
 
-## Sprint 00 acceptance criteria
+## Completed foundation
 
-- Product invariants documented.
-- Architecture boundaries documented.
-- Security baseline and threat model documented.
-- API conventions documented.
-- Initial data model documented.
-- AI/developer operating rules documented.
+Sprint 00–01 was merged only after CI passed frontend typecheck/build and backend formatting/vet/race tests. The repository now contains the authoritative architecture/security/data/API rules, local PostgreSQL/Redis/NATS stack, initial account/session migration, Go API skeleton and mobile-first Next.js shell.
 
-## Sprint 01 acceptance criteria
+## Sprint 02 acceptance criteria
 
-- Repository bootstraps locally from documented commands.
-- PostgreSQL, Redis and NATS available through Docker Compose.
-- Go API starts and exposes `/health/live` and `/health/ready`.
-- Frontend starts and renders responsive CHAT shell.
-- Configuration is environment-driven with safe defaults for local development.
-- Initial migration framework/schema exists.
-- CI runs Go tests/vet and frontend type/lint/build checks.
-- No secrets are committed.
+- Design tokens cover color, spacing, typography, radius, motion and elevation.
+- Reusable primitives exist for Button, IconButton, Avatar, Badge, SearchField, Surface/Card, Skeleton, EmptyState and Sheet/Modal foundation.
+- Responsive `AppShell` owns the permanent four-zone navigation rather than individual pages.
+- Light/dark modes are token-driven and accessible.
+- Touch targets are at least 44px for primary interactive controls.
+- Focus-visible states exist for keyboard accessibility.
+- The existing Chats preview is refactored to use design-system primitives instead of one-off markup/styles.
+- Frontend typecheck/build remain green.
 
 ## Definition of Done for every feature sprint
 
@@ -115,4 +110,4 @@ Before implementing a sprint, an AI agent must:
 
 ## Current next action
 
-Finish Sprint 00 and Sprint 01 foundation, verify CI/local boot, then start Sprint 02 Design System.
+Complete Sprint 02 Design System and responsive application shell, verify CI, then begin Sprint 03 Identity.
