@@ -39,22 +39,22 @@ type CreateSessionInput struct {
 }
 
 type SessionTokens struct {
-	UserID       string
-	SessionID    string
-	AccessToken  string
-	RefreshToken string
-	AccessExpiry time.Time
+	UserID        string
+	SessionID     string
+	AccessToken   string
+	RefreshToken  string
+	AccessExpiry  time.Time
 	RefreshExpiry time.Time
 }
 
 type Service struct {
-	store        Store
-	sender       MagicLinkSender
-	now          func() time.Time
-	challengeTTL time.Duration
-	accessTTL    time.Duration
-	refreshTTL   time.Duration
-	attemptLimit int
+	store         Store
+	sender        MagicLinkSender
+	now           func() time.Time
+	challengeTTL  time.Duration
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
+	attemptLimit  int
 	attemptWindow time.Duration
 }
 
