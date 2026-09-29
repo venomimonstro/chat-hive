@@ -32,8 +32,14 @@ jobs:
       - name: Module integrity
         run: |
           go mod tidy
-          git diff -- go.mod go.sum
-          git diff --exit-code -- go.mod go.sum
+          echo '--- BEGIN GENERATED go.mod ---'
+          cat go.mod
+          echo '--- END GENERATED go.mod ---'
+          echo '--- BEGIN GENERATED go.sum ---'
+          cat go.sum
+          echo '--- END GENERATED go.sum ---'
+          git diff --exit-code -- go.mod
+          git ls-files --error-unmatch go.sum >/dev/null
       - name: Vet
         run: go vet ./...
       - name: Test
