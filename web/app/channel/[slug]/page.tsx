@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/AppShell';
 import { Button, Surface } from '../../../components/ui';
+import { getAccessToken } from '../../../lib/api';
 import { Channel, ChannelPost, createChannelPost, getChannel, listChannelPosts, setChannelSubscription } from '../../../lib/channels';
 
 function formatDate(value: string) {
@@ -21,13 +22,16 @@ export default function ChannelPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  function requireLogin() {
+    router.push(`/login?next=${encodeURIComponent(`/channel/${slug}`)}`);
+  }
+
   async function load() {
     setError('');
     try {
       const [channelValue, postValues] = await Promise.all([getChannel(slug), listChannelPosts(slug)]);
       setChannel(channelValue); setPosts(postValues);
     } catch (err) {
-      if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
       setError(err instanceof Error ? err.message : 'Канал недоступен');
     } finally { setLoading(false); }
   }
@@ -35,10 +39,13 @@ export default function ChannelPage() {
 
   async function toggleSubscription() {
     if (!channel || channel.mine || busy) return;
+    if (!getAccessToken()) { requireLogin(); return; }
     setBusy(true); setError('');
     try { setChannel(await setChannelSubscription(slug, !channel.subscribed)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Не удалось изменить подписку'); }
-    finally { setBusy(false); }
+    catch (err) {
+      if (err instanceof Error && err.message === 'Authentication required') { requireLogin(); return; }
+      setError(err instanceof Error ? err.message : 'Не удалось изменить подписку');
+    } finally { setBusy(false); }
   }
 
   async function publish(event: FormEvent) {
