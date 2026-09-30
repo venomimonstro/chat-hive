@@ -24,13 +24,12 @@ func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logge
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/feed", h.list)
+	mux.HandleFunc("PUT /api/v1/feed/{post_id}/feedback", h.feedback)
 }
 
 func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	var before time.Time
 	if raw := strings.TrimSpace(r.URL.Query().Get("before")); raw != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, raw)
@@ -52,6 +51,28 @@ func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) feedback(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.authenticate(w, r)
+	if !ok { return }
+	var body struct{ Signal string `json:"signal"` }
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
+		return
+	}
+	if err := h.service.SetFeedback(r.Context(), session.UserID, r.PathValue("post_id"), body.Signal); err != nil {
+		if errors.Is(err, ErrInvalidFeedback) {
+			writeError(w, http.StatusBadRequest, "invalid_feedback", "Invalid feedback")
+			return
+		}
+		h.logger.Error("feed feedback failed", "error", err, "user_id", session.UserID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
