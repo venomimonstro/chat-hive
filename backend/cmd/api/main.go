@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/venomimonstro/chat-hive/backend/internal/admin"
 	"github.com/venomimonstro/chat-hive/backend/internal/config"
 	"github.com/venomimonstro/chat-hive/backend/internal/feed"
 	"github.com/venomimonstro/chat-hive/backend/internal/groups"
@@ -60,6 +61,7 @@ func main() {
 	searchHTTP := search.NewHTTPHandler(search.NewService(search.NewPostgresStore(pool)), identityService, logger)
 	requestHTTP := requests.NewHTTPHandler(requests.NewService(requests.NewPostgresStore(pool)), identityService, logger)
 	moderationHTTP := moderation.NewHTTPHandler(moderation.NewService(moderation.NewPostgresStore(pool)), identityService, logger)
+	adminHTTP := admin.NewHTTPHandler(admin.NewService(admin.NewPostgresStore(pool)), identityService, logger)
 
 	mediaFiles, err := media.NewFileStorageFromEnv()
 	if err != nil { logger.Error("media storage configuration failed", "error", err); os.Exit(1) }
@@ -76,6 +78,7 @@ func main() {
 	app.Register(searchHTTP.Register)
 	app.Register(requestHTTP.Register)
 	app.Register(moderationHTTP.Register)
+	app.Register(adminHTTP.Register)
 	app.Register(mediaHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
