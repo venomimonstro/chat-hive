@@ -15,15 +15,16 @@ var (
 )
 
 type Notification struct {
-	ID         string     `json:"id"`
-	Kind       string     `json:"kind"`
-	ActorID    *string    `json:"actor_id,omitempty"`
-	EntityType string     `json:"entity_type"`
-	EntityID   string     `json:"entity_id"`
-	Title      string     `json:"title"`
-	Body       string     `json:"body"`
-	ReadAt     *time.Time `json:"read_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID            string     `json:"id"`
+	Kind          string     `json:"kind"`
+	ActorID       *string    `json:"actor_id,omitempty"`
+	ActorUsername string     `json:"actor_username,omitempty"`
+	EntityType    string     `json:"entity_type"`
+	EntityID      string     `json:"entity_id"`
+	Title         string     `json:"title"`
+	Body          string     `json:"body"`
+	ReadAt        *time.Time `json:"read_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type EmitInput struct {
@@ -95,7 +96,7 @@ func (s *Service) Emit(ctx context.Context, input EmitInput) error {
 		return ErrInvalid
 	}
 	switch input.Kind {
-	case "direct_message", "group_message", "channel_post", "follow", "moderation", "security":
+	case "direct_message", "group_message", "channel_post", "post_reply", "follow", "moderation", "security":
 	default:
 		return ErrInvalid
 	}
