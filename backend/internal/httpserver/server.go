@@ -149,6 +149,14 @@ func (w *statusWriter) Write(body []byte) (int,error) {
 
 func requestTelemetryMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// WebSocket libraries need the original ResponseWriter interfaces for the HTTP upgrade.
+		// Log the attempt without wrapping the writer; connection-level telemetry lives in realtime.
+		if r.URL.Path == "/api/v1/realtime" {
+			started:=time.Now()
+			next.ServeHTTP(w,r)
+			logger.Info("websocket_request","method",r.Method,"path",r.URL.Path,"duration_ms",time.Since(started).Milliseconds(),"request_id",w.Header().Get("X-Request-ID"))
+			return
+		}
 		started:=time.Now()
 		wrapped:=&statusWriter{ResponseWriter:w}
 		next.ServeHTTP(wrapped,r)
