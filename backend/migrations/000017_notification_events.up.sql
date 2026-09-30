@@ -1,3 +1,8 @@
+ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (
+    kind IN ('direct_message','group_message','channel_post','post_reply','follow','moderation','security')
+);
+
 CREATE OR REPLACE FUNCTION notify_message_insert() RETURNS trigger AS $$
 DECLARE
     chat_kind TEXT;
@@ -56,7 +61,7 @@ BEGIN
         INSERT INTO notifications(user_id,kind,actor_id,entity_type,entity_id,title,body,dedupe_key)
         VALUES(
             target_author,
-            'moderation',
+            'post_reply',
             NEW.author_id,
             'post',
             NEW.post_id::text,
