@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -10,6 +11,7 @@ import (
 var (
 	ErrForbidden = errors.New("notification access denied")
 	ErrNotFound  = errors.New("notification not found")
+	ErrInvalid   = errors.New("invalid notification input")
 )
 
 type Notification struct {
@@ -24,10 +26,32 @@ type Notification struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+type EmitInput struct {
+	UserID     string
+	Kind       string
+	ActorID    string
+	EntityType string
+	EntityID   string
+	Title      string
+	Body       string
+	DedupeKey  string
+}
+
+type PushSubscriptionInput struct {
+	UserID    string
+	Endpoint  string
+	P256DH    string
+	Auth      string
+	UserAgent string
+}
+
 type Store interface {
 	List(ctx context.Context, userID string, limit int) ([]Notification, int64, error)
 	MarkRead(ctx context.Context, userID, notificationID string) error
 	MarkAllRead(ctx context.Context, userID string) error
+	Emit(ctx context.Context, input EmitInput) error
+	UpsertPushSubscription(ctx context.Context, input PushSubscriptionInput) error
+	RevokePushSubscription(ctx context.Context, userID, endpoint string) error
 }
 
 type Service struct{ store Store }
@@ -43,7 +67,8 @@ func (s *Service) List(ctx context.Context, userID string, limit int) ([]Notific
 }
 
 func (s *Service) MarkRead(ctx context.Context, userID, notificationID string) error {
-	userID = strings.TrimSpace(userID); notificationID = strings.TrimSpace(notificationID)
+	userID = strings.TrimSpace(userID)
+	notificationID = strings.TrimSpace(notificationID)
 	if userID == "" || !looksLikeUUID(notificationID) { return ErrNotFound }
 	return s.store.MarkRead(ctx, userID, notificationID)
 }
@@ -52,6 +77,52 @@ func (s *Service) MarkAllRead(ctx context.Context, userID string) error {
 	userID = strings.TrimSpace(userID)
 	if userID == "" { return ErrForbidden }
 	return s.store.MarkAllRead(ctx, userID)
+}
+
+// Emit is intentionally a small application boundary. Business modules depend on
+// this behavior rather than notification persistence, so delivery can later move
+// to NATS/outbox without changing their domain APIs.
+func (s *Service) Emit(ctx context.Context, input EmitInput) error {
+	input.UserID = strings.TrimSpace(input.UserID)
+	input.ActorID = strings.TrimSpace(input.ActorID)
+	input.Kind = strings.ToLower(strings.TrimSpace(input.Kind))
+	input.EntityType = strings.ToLower(strings.TrimSpace(input.EntityType))
+	input.EntityID = strings.TrimSpace(input.EntityID)
+	input.Title = strings.TrimSpace(input.Title)
+	input.Body = strings.TrimSpace(input.Body)
+	input.DedupeKey = strings.TrimSpace(input.DedupeKey)
+	if input.UserID == "" || input.Title == "" || len([]rune(input.Title)) > 140 || len([]rune(input.Body)) > 500 {
+		return ErrInvalid
+	}
+	switch input.Kind {
+	case "direct_message", "group_message", "channel_post", "follow", "moderation", "security":
+	default:
+		return ErrInvalid
+	}
+	return s.store.Emit(ctx, input)
+}
+
+func (s *Service) SubscribePush(ctx context.Context, input PushSubscriptionInput) error {
+	input.UserID = strings.TrimSpace(input.UserID)
+	input.Endpoint = strings.TrimSpace(input.Endpoint)
+	input.P256DH = strings.TrimSpace(input.P256DH)
+	input.Auth = strings.TrimSpace(input.Auth)
+	input.UserAgent = strings.TrimSpace(input.UserAgent)
+	parsed, err := url.Parse(input.Endpoint)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || len(input.Endpoint) > 2048 || input.P256DH == "" || input.Auth == "" || len(input.P256DH) > 512 || len(input.Auth) > 512 {
+		return ErrInvalid
+	}
+	if input.UserID == "" { return ErrForbidden }
+	if len(input.UserAgent) > 512 { input.UserAgent = input.UserAgent[:512] }
+	return s.store.UpsertPushSubscription(ctx, input)
+}
+
+func (s *Service) UnsubscribePush(ctx context.Context, userID, endpoint string) error {
+	userID = strings.TrimSpace(userID)
+	endpoint = strings.TrimSpace(endpoint)
+	if userID == "" { return ErrForbidden }
+	if endpoint == "" || len(endpoint) > 2048 { return ErrInvalid }
+	return s.store.RevokePushSubscription(ctx, userID, endpoint)
 }
 
 func looksLikeUUID(value string) bool {
