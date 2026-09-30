@@ -10,6 +10,8 @@ export type ReactionSummary = {
   mine: boolean;
 };
 
+export type ReactionBatch = Record<string, ReactionSummary[]>;
+
 async function apiFetch(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
   if (!access) access = (await refreshSession())?.access_token ?? null;
@@ -52,6 +54,16 @@ export async function listChatMessageReactions(messageId: string): Promise<React
   const response = await apiFetch(`/api/v1/messages/${encodeURIComponent(messageId)}/reactions`);
   if (!response.ok) throw new Error(await errorMessage(response));
   const payload = await response.json() as { items: ReactionSummary[] };
+  return payload.items;
+}
+
+export async function listReactionBatch(messageIds: string[]): Promise<ReactionBatch> {
+  if (messageIds.length === 0) return {};
+  const response = await apiFetch('/api/v1/messages/reactions/batch', {
+    method: 'POST', body: JSON.stringify({ message_ids: messageIds.slice(0,100) })
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const payload = await response.json() as { items: ReactionBatch };
   return payload.items;
 }
 
