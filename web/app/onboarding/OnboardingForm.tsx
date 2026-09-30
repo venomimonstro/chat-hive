@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { completeOnboarding, getProfile, Interest, listInterests } from '../../lib/api';
+import { takeReturnTo } from '../../lib/returnTo';
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -21,7 +22,7 @@ export function OnboardingForm() {
       .then(([items, profile]) => {
         setInterests(items);
         if (profile?.completed) {
-          router.replace('/');
+          router.replace(takeReturnTo('/'));
           return;
         }
         if (profile) {
@@ -55,7 +56,7 @@ export function OnboardingForm() {
         bio: bio.trim(),
         interests: selected
       });
-      router.replace('/');
+      router.replace(takeReturnTo('/'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить профиль');
     } finally {
