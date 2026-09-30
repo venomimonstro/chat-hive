@@ -1,89 +1,42 @@
-'use client';
+import type { Metadata } from 'next';
+import { ChannelClient } from './ChannelClient';
 
-import { FormEvent, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { AppShell } from '../../../components/AppShell';
-import { Button, Surface } from '../../../components/ui';
-import { getAccessToken } from '../../../lib/api';
-import { Channel, ChannelPost, createChannelPost, getChannel, listChannelPosts, setChannelSubscription } from '../../../lib/channels';
+const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+type PublicChannel = { slug: string; title: string; description: string; subscribers_count: number };
+
+async function getPublicChannel(slug: string): Promise<PublicChannel | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/channels/${encodeURIComponent(slug)}`, {
+      headers: { Accept: 'application/json' }, cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    return response.json() as Promise<PublicChannel>;
+  } catch {
+    return null;
+  }
 }
 
-export default function ChannelPage() {
-  const params = useParams<{ slug: string }>();
-  const router = useRouter();
-  const slug = params.slug;
-  const [channel, setChannel] = useState<Channel | null>(null);
-  const [posts, setPosts] = useState<ChannelPost[]>([]);
-  const [body, setBody] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+function summary(value: string, fallback: string) {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (!compact) return fallback;
+  return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact;
+}
 
-  function requireLogin() {
-    router.push(`/login?next=${encodeURIComponent(`/channel/${slug}`)}`);
-  }
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const channel = await getPublicChannel(slug);
+  if (!channel) return { title: 'Канал — CHAT', robots: { index: false, follow: false } };
+  const description = summary(channel.description, `${channel.title} · ${channel.subscribers_count} подписчиков в CHAT`);
+  return {
+    title: `${channel.title} (@${channel.slug}) — CHAT`,
+    description,
+    openGraph: { type: 'website', title: `${channel.title} — CHAT`, description },
+    twitter: { card: 'summary', title: `${channel.title} — CHAT`, description }
+  };
+}
 
-  async function load() {
-    setError('');
-    try {
-      const [channelValue, postValues] = await Promise.all([getChannel(slug), listChannelPosts(slug)]);
-      setChannel(channelValue); setPosts(postValues);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Канал недоступен');
-    } finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, [slug]);
-
-  async function toggleSubscription() {
-    if (!channel || channel.mine || busy) return;
-    if (!getAccessToken()) { requireLogin(); return; }
-    setBusy(true); setError('');
-    try { setChannel(await setChannelSubscription(slug, !channel.subscribed)); }
-    catch (err) {
-      if (err instanceof Error && err.message === 'Authentication required') { requireLogin(); return; }
-      setError(err instanceof Error ? err.message : 'Не удалось изменить подписку');
-    } finally { setBusy(false); }
-  }
-
-  async function publish(event: FormEvent) {
-    event.preventDefault();
-    const text = body.trim();
-    if (!channel?.mine || !text || busy) return;
-    setBusy(true); setError('');
-    try {
-      const post = await createChannelPost(slug, text);
-      setPosts((current) => [post, ...current]);
-      setBody('');
-    } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось опубликовать'); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <AppShell active="Открыть">
-      <header className="screenHeader"><div><span className="eyebrow">КАНАЛ</span><h1>{channel?.title ?? 'Канал'}</h1></div><a href="/channels">←</a></header>
-      <main className="channelPage">
-        {loading ? <p className="chatListState">Загружаем…</p> : null}
-        {error ? <p className="messengerError" role="alert">{error}</p> : null}
-        {channel ? <>
-          <Surface className="channelHero">
-            <div className="channelHeroMark">◈</div><h2>{channel.title}</h2><span>@{channel.slug}</span><p>{channel.description || 'Без описания'}</p>
-            <div className="channelStats"><strong>{channel.subscribers_count}</strong><span>подписчиков</span></div>
-            {channel.moderation_status === 'pending' ? <div className="channelModerationNote">Канал ожидает модерации и пока не показывается в публичном каталоге.</div> : null}
-            {channel.moderation_status === 'rejected' ? <div className="channelModerationNote isRejected">Публичное размещение канала не одобрено.</div> : null}
-            <div className="channelActions">
-              {!channel.mine ? <Button onClick={toggleSubscription} disabled={busy}>{channel.subscribed ? 'Отписаться' : 'Подписаться'}</Button> : <span className="channelOwnerBadge">Вы владелец</span>}
-            </div>
-          </Surface>
-          {channel.mine ? <Surface className="channelComposer"><form onSubmit={publish}><textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={8000} rows={4} placeholder="Новая публикация канала…" /><Button type="submit" disabled={busy || !body.trim()}>Опубликовать</Button></form></Surface> : null}
-          <section className="channelPosts">
-            {posts.length === 0 ? <Surface className="channelEmpty">Публикаций пока нет.</Surface> : null}
-            {posts.map((post) => <article className="channelPost" key={post.id}><a href={`/post/${post.id}`}><p>{post.body}</p><span>{formatDate(post.created_at)}</span></a></article>)}
-          </section>
-        </> : null}
-      </main>
-    </AppShell>
-  );
+export default async function ChannelPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return <ChannelClient slug={slug} />;
 }
