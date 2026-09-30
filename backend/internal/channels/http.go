@@ -37,15 +37,15 @@ func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) discover(w http.ResponseWriter, r *http.Request) {
-	session,ok:=h.authenticate(w,r); if !ok{return}
+	viewerID,ok:=h.optionalViewer(w,r); if !ok{return}
 	limit,_:=strconv.Atoi(r.URL.Query().Get("limit"))
-	items,err:=h.service.Discover(r.Context(),session.UserID,limit); if err!=nil{h.domain(w,err);return}
+	items,err:=h.service.Discover(r.Context(),viewerID,limit); if err!=nil{h.domain(w,err);return}
 	writeJSON(w,200,map[string]any{"items":items})
 }
 
 func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {
-	session,ok:=h.authenticate(w,r);if !ok{return}
-	item,err:=h.service.Get(r.Context(),session.UserID,r.PathValue("slug"));if err!=nil{h.domain(w,err);return}
+	viewerID,ok:=h.optionalViewer(w,r);if !ok{return}
+	item,err:=h.service.Get(r.Context(),viewerID,r.PathValue("slug"));if err!=nil{h.domain(w,err);return}
 	writeJSON(w,200,item)
 }
 
@@ -65,9 +65,14 @@ func (h *HTTPHandler) createPost(w http.ResponseWriter,r *http.Request){
 }
 
 func (h *HTTPHandler) listPosts(w http.ResponseWriter,r *http.Request){
-	session,ok:=h.authenticate(w,r);if !ok{return}
-	limit,_:=strconv.Atoi(r.URL.Query().Get("limit"));items,err:=h.service.ListPosts(r.Context(),session.UserID,r.PathValue("slug"),limit);if err!=nil{h.domain(w,err);return}
+	viewerID,ok:=h.optionalViewer(w,r);if !ok{return}
+	limit,_:=strconv.Atoi(r.URL.Query().Get("limit"));items,err:=h.service.ListPosts(r.Context(),viewerID,r.PathValue("slug"),limit);if err!=nil{h.domain(w,err);return}
 	writeJSON(w,200,map[string]any{"items":items})
+}
+
+func (h *HTTPHandler) optionalViewer(w http.ResponseWriter,r *http.Request)(string,bool){
+	if strings.TrimSpace(r.Header.Get("Authorization"))==""{return "",true}
+	session,ok:=h.authenticate(w,r);if !ok{return "",false};return session.UserID,true
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter,r *http.Request)(identity.AuthenticatedSession,bool){parts:=strings.Fields(r.Header.Get("Authorization"));if len(parts)!=2||!strings.EqualFold(parts[0],"Bearer")||len(parts[1])>512{writeError(w,401,"unauthorized","Authentication required");return identity.AuthenticatedSession{},false};session,err:=h.auth.AuthenticateAccessToken(r.Context(),parts[1]);if err!=nil{writeError(w,401,"unauthorized","Authentication required");return identity.AuthenticatedSession{},false};return session,true}
