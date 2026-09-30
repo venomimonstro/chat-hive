@@ -23,7 +23,14 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 			SELECT p.id, p.author_id, p.kind, p.body, p.replies_count, p.reactions_count, p.created_at,
 			       pr.username, pr.display_name,
 			       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$1::uuid AND f.followed_id=p.author_id) AS is_following,
-			       (SELECT count(*) FROM user_interests ai JOIN viewer_interests vi ON vi.interest_slug=ai.interest_slug WHERE ai.user_id=p.author_id) AS shared_interests
+			       (SELECT count(*) FROM user_interests ai JOIN viewer_interests vi ON vi.interest_slug=ai.interest_slug WHERE ai.user_id=p.author_id) AS shared_interests,
+			       (SELECT count(*) FROM follows af WHERE af.followed_id=p.author_id) AS follower_count,
+			       EXISTS(
+				SELECT 1
+				FROM feed_feedback ff
+				JOIN posts liked_post ON liked_post.id=ff.post_id
+				WHERE ff.user_id=$1::uuid AND ff.signal='more_like_this' AND liked_post.author_id=p.author_id
+			   ) AS positive_author_affinity
 			FROM posts p
 			JOIN profiles pr ON pr.user_id=p.author_id
 			JOIN users u ON u.id=p.author_id AND u.status='active'
@@ -36,14 +43,24 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 				WHERE (b.blocker_id=$1::uuid AND b.blocked_id=p.author_id)
 				   OR (b.blocker_id=p.author_id AND b.blocked_id=$1::uuid)
 			  )
+			  AND NOT EXISTS(
+				SELECT 1 FROM feed_feedback ff
+				WHERE ff.user_id=$1::uuid AND ff.post_id=p.id AND ff.signal IN ('not_interested','hide')
+			  )
 		)
 		SELECT c.id::text,c.author_id::text,c.username,c.display_name,c.kind,c.body,c.replies_count,c.reactions_count,c.created_at,
 		       CASE
 			WHEN c.is_following THEN 'Вы подписаны на автора'
+			WHEN c.positive_author_affinity THEN 'Похоже на то, что вам нравится'
 			WHEN c.shared_interests>0 THEN 'У вас общие интересы'
+			WHEN c.follower_count<100 AND c.created_at>now()-interval '48 hours' THEN 'Новый автор в CHAT'
 			ELSE 'Новое в CHAT'
 		   END AS reason,
-		       (CASE WHEN c.is_following THEN 100 ELSE 0 END) + LEAST(c.shared_interests,5)*12 + LEAST(c.replies_count,20)::int AS score,
+		       (CASE WHEN c.is_following THEN 100 ELSE 0 END)
+		       + (CASE WHEN c.positive_author_affinity THEN 36 ELSE 0 END)
+		       + LEAST(c.shared_interests,5)*12
+		       + LEAST(c.replies_count,20)::int
+		       + (CASE WHEN c.follower_count<100 AND c.created_at>now()-interval '48 hours' THEN 24 ELSE 0 END) AS score,
 		       media.id::text,media.mime_type,media.width,media.height
 		FROM candidates c
 		LEFT JOIN LATERAL (
@@ -56,13 +73,17 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 		) media ON TRUE
 		WHERE ($2='for-you' OR ($2='following' AND c.is_following))
 		ORDER BY
-			CASE WHEN $2='following' THEN extract(epoch from c.created_at)::bigint ELSE ((CASE WHEN c.is_following THEN 100 ELSE 0 END) + LEAST(c.shared_interests,5)*12 + LEAST(c.replies_count,20)::int) END DESC,
+			CASE WHEN $2='following' THEN extract(epoch from c.created_at)::bigint ELSE (
+				(CASE WHEN c.is_following THEN 100 ELSE 0 END)
+				+ (CASE WHEN c.positive_author_affinity THEN 36 ELSE 0 END)
+				+ LEAST(c.shared_interests,5)*12
+				+ LEAST(c.replies_count,20)::int
+				+ (CASE WHEN c.follower_count<100 AND c.created_at>now()-interval '48 hours' THEN 24 ELSE 0 END)
+			) END DESC,
 			c.created_at DESC,c.id DESC
 		LIMIT $4`
 	rows, err := s.pool.Query(ctx, query, userID, mode, beforeValue, limit)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	defer rows.Close()
 	items := make([]Item, 0, limit)
 	for rows.Next() {
@@ -74,13 +95,21 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 			&item.Kind, &item.Body, &item.RepliesCount, &item.ReactionsCount,
 			&item.CreatedAt, &item.Reason, &item.Score,
 			&mediaID, &mimeType, &width, &height,
-		); err != nil {
-			return nil, err
-		}
+		); err != nil { return nil, err }
 		if mediaID != nil && mimeType != nil && width != nil && height != nil {
-			item.Cover = &MediaRef{ID: *mediaID, MimeType: *mimeType, Width: *width, Height: *height, URL: "/api/v1/media/" + *mediaID + "/content"}
+			item.Cover = &MediaRef{ID:*mediaID, MimeType:*mimeType, Width:*width, Height:*height, URL:"/api/v1/media/"+*mediaID+"/content"}
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *PostgresStore) SetFeedback(ctx context.Context, userID, postID, signal string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO feed_feedback(user_id,post_id,signal)
+		SELECT $1::uuid,p.id,$3
+		FROM posts p
+		WHERE p.id=$2::uuid AND p.deleted_at IS NULL AND p.visibility='public'
+		ON CONFLICT(user_id,post_id) DO UPDATE SET signal=EXCLUDED.signal,updated_at=now()`, userID, postID, signal)
+	return err
 }
