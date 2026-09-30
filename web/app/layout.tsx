@@ -8,6 +8,7 @@ import './messenger.css';
 import './create.css';
 import './discover.css';
 import './search.css';
+import './trust.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
