@@ -57,10 +57,10 @@ func (h *HTTPHandler) connect(w http.ResponseWriter,r *http.Request) {
 	h.hub.Register(client)
 	defer h.hub.Unregister(client)
 
+	if err:=wsjson.Write(ctx,conn,Event{Type:"ready",OccurredAt:time.Now().UTC().Format(time.RFC3339Nano)});err!=nil{return}
 	writerDone:=make(chan struct{})
 	go func(){ defer close(writerDone); h.writeLoop(ctx,conn,client) }()
 
-	if err:=wsjson.Write(ctx,conn,Event{Type:"ready",OccurredAt:time.Now().UTC().Format(time.RFC3339Nano)});err!=nil{return}
 	for {
 		var command struct{ Type string `json:"type"` }
 		readCtx,readCancel:=context.WithTimeout(ctx,90*time.Second)
