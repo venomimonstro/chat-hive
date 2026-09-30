@@ -49,6 +49,9 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return Config{}, fmt.Errorf("CHAT_DATABASE_URL must not be empty")
 	}
+	if err := validatePostgresURL(cfg.DatabaseURL); err != nil {
+		return Config{}, fmt.Errorf("CHAT_DATABASE_URL: %w", err)
+	}
 	if err := validateHTTPURL(cfg.WebOrigin, cfg.Environment == "production"); err != nil {
 		return Config{}, fmt.Errorf("CHAT_WEB_ORIGIN: %w", err)
 	}
@@ -64,8 +67,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("CHAT_SMTP_PASSWORD is required when CHAT_SMTP_USERNAME is set")
 	}
 	if cfg.Environment == "production" {
+		if _, ok := os.LookupEnv("CHAT_DATABASE_URL"); !ok {
+			return Config{}, fmt.Errorf("CHAT_DATABASE_URL must be explicitly set in production")
+		}
+		if isDevelopmentDatabaseURL(cfg.DatabaseURL) {
+			return Config{}, fmt.Errorf("CHAT_DATABASE_URL uses development credentials in production")
+		}
 		if cfg.SMTPAddr == "" || cfg.SMTPFrom == "" {
 			return Config{}, fmt.Errorf("CHAT_SMTP_ADDR and CHAT_SMTP_FROM are required in production")
+		}
+		if strings.Contains(strings.ToLower(cfg.SMTPFrom), "example.com") {
+			return Config{}, fmt.Errorf("CHAT_SMTP_FROM must not use example.com in production")
 		}
 	}
 	return cfg, nil
@@ -80,6 +92,26 @@ func validateHTTPURL(value string, requireHTTPS bool) error {
 		return fmt.Errorf("must use HTTPS in production")
 	}
 	return nil
+}
+
+func validatePostgresURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil || u.Host == "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return fmt.Errorf("must be an absolute postgres URL")
+	}
+	if u.User == nil || u.User.Username() == "" {
+		return fmt.Errorf("database user is required")
+	}
+	return nil
+}
+
+func isDevelopmentDatabaseURL(value string) bool {
+	u, err := url.Parse(value)
+	if err != nil {
+		return true
+	}
+	password, _ := u.User.Password()
+	return u.User.Username() == "chat" && password == "chat"
 }
 
 func env(key, fallback string) string {
