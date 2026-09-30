@@ -1,13 +1,20 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { startEmailLogin, startYandexLogin } from '../../lib/api';
+import { rememberReturnTo } from '../../lib/returnTo';
 
 export function LoginForm() {
+  const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'yandex'>('idle');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    rememberReturnTo(params.get('next'));
+  }, [params]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
