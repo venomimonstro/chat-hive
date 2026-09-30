@@ -41,6 +41,14 @@ function saveOutbox(items: OutboxItem[]) {
   else window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(-200)));
 }
 
+function replaceChatQuery(chatID?: string) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (chatID) url.searchParams.set('chat', chatID);
+  else url.searchParams.delete('chat');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 export function ChatsClient() {
   const [userId, setUserId] = useState('');
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -55,6 +63,11 @@ export function ChatsClient() {
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
+
+  function chooseChat(chat: ChatSummary | null) {
+    setSelected(chat);
+    replaceChatQuery(chat?.chat_id);
+  }
 
   async function refreshChats() {
     try {
@@ -101,6 +114,11 @@ export function ChatsClient() {
         }
         setUserId(session.user_id);
         setChats(items);
+        const requested = new URLSearchParams(window.location.search).get('chat');
+        if (requested) {
+          const match = items.find((item) => item.chat_id === requested);
+          if (match) setSelected(match);
+        }
         void flushOutbox();
       })
       .catch(() => setError('Не удалось загрузить чаты'))
@@ -185,7 +203,7 @@ export function ChatsClient() {
     try {
       const chat = await ensureDirectChat(username);
       setChats((current) => [chat, ...current.filter((item) => item.chat_id !== chat.chat_id)]);
-      setSelected(chat);
+      chooseChat(chat);
       setNewUsername('');
       setShowNewChat(false);
     } catch (err) {
@@ -217,8 +235,7 @@ export function ChatsClient() {
       body: text,
       created_at: new Date().toISOString()
     };
-    const queue = [...loadOutbox(), item];
-    saveOutbox(queue);
+    saveOutbox([...loadOutbox(), item]);
     setDraft('');
     setMessages((current) => [...current, {
       id: `local-${item.client_message_id}`,
@@ -261,7 +278,7 @@ export function ChatsClient() {
             {loading ? <div className="chatListState">Загружаем чаты…</div> : null}
             {!loading && filteredChats.length === 0 ? <div className="chatListState">Диалогов пока нет. Нажмите ＋ и введите username.</div> : null}
             {filteredChats.map((chat) => (
-              <button className={`chatRow chatRowButton ${selected?.chat_id === chat.chat_id ? 'isSelected' : ''}`} key={chat.chat_id} onClick={() => setSelected(chat)}>
+              <button className={`chatRow chatRowButton ${selected?.chat_id === chat.chat_id ? 'isSelected' : ''}`} key={chat.chat_id} onClick={() => chooseChat(chat)}>
                 <Avatar name={chatName(chat)} />
                 <div className="chatCopy">
                   <div className="chatHeadline"><strong>{chatName(chat)}</strong><time>{formatTime(chat.last_message?.created_at ?? chat.updated_at)}</time></div>
@@ -278,9 +295,10 @@ export function ChatsClient() {
           ) : (
             <>
               <header className="conversationHeader">
-                <IconButton className="conversationBack" type="button" aria-label="Назад к чатам" onClick={() => setSelected(null)}>‹</IconButton>
+                <IconButton className="conversationBack" type="button" aria-label="Назад к чатам" onClick={() => chooseChat(null)}>‹</IconButton>
                 <Avatar name={chatName(selected)} size="sm" />
-                <div><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : null}</div>
+                <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : <span>Группа</span>}</div>
+                {selected.kind === 'group' ? <a className="conversationSettings" href={`/groups/${selected.chat_id}`} aria-label="Настройки группы">•••</a> : null}
               </header>
               <div className="messageList" aria-live="polite">
                 {messageLoading ? <div className="chatListState">Загружаем историю…</div> : null}
