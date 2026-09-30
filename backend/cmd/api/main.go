@@ -24,6 +24,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/notifications"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 	"github.com/venomimonstro/chat-hive/backend/internal/posts"
+	"github.com/venomimonstro/chat-hive/backend/internal/realtime"
 	"github.com/venomimonstro/chat-hive/backend/internal/requests"
 	"github.com/venomimonstro/chat-hive/backend/internal/search"
 	"github.com/venomimonstro/chat-hive/backend/internal/social"
@@ -71,6 +72,12 @@ func main() {
 	communityHTTP := communities.NewHTTPHandler(communities.NewService(communities.NewPostgresStore(pool)), identityService, logger)
 	channelHTTP := channels.NewHTTPHandler(channels.NewService(channels.NewPostgresStore(pool)), identityService, logger)
 
+	realtimeHub := realtime.NewHub()
+	realtimeHTTP := realtime.NewHTTPHandler(identityService, realtimeHub, logger, cfg.WebOrigin)
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
+	go realtime.NewListener(pool, realtimeHub, logger).Run(runtimeCtx)
+
 	mediaFiles, err := media.NewFileStorageFromEnv()
 	if err != nil { logger.Error("media storage configuration failed", "error", err); os.Exit(1) }
 	mediaHTTP := media.NewHTTPHandler(media.NewService(media.NewPostgresStore(pool), mediaFiles), identityService, logger)
@@ -90,6 +97,7 @@ func main() {
 	app.Register(communityHTTP.Register)
 	app.Register(channelHTTP.Register)
 	app.Register(notificationHTTP.Register)
+	app.Register(realtimeHTTP.Register)
 	app.Register(mediaHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
@@ -102,8 +110,10 @@ func main() {
 	defer stop()
 	select {
 	case err := <-serverErr:
+		cancelRuntime()
 		if err != nil && err != http.ErrServerClosed { logger.Error("HTTP server failed", "error", err); os.Exit(1) }
 	case <-signalCtx.Done():
+		cancelRuntime()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil { logger.Error("graceful shutdown failed", "error", err); os.Exit(1) }
