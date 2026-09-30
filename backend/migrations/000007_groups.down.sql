@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS group_invites;
+ALTER TABLE chat_members DROP COLUMN IF EXISTS role;
