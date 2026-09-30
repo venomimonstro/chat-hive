@@ -13,6 +13,7 @@ import './trust.css';
 import './admin.css';
 import './community.css';
 import './channel.css';
+import './notifications.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
