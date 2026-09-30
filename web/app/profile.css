@@ -3,7 +3,7 @@
 .profileIdentity { min-width: 0; }
 .profileIdentity h1 { margin: 0; font-size: 26px; letter-spacing: -.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profileIdentity span { display: block; color: var(--color-muted); margin-top: 4px; }
-.profileActions { display: flex; gap: 8px; align-items: center; }
+.profileActions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .profileStats { display: flex; gap: 28px; margin: 24px 0 16px; }
 .profileStats div { display: flex; gap: 6px; align-items: baseline; }
 .profileStats strong { font-size: 20px; }
@@ -15,6 +15,16 @@
 .profileEmptyContent h2 { margin: 0 0 8px; font-size: 18px; }
 .profileEmptyContent p { margin: 0; color: var(--color-muted); line-height: 1.5; }
 .profileState { min-height: 50dvh; display: grid; place-items: center; text-align: center; color: var(--color-muted); }
+.profilePostList { display: grid; gap: 10px; margin-top: 10px; }
+.profilePostHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.profilePostHeading h2 { margin: 0; font-size: 18px; }
+.profilePostHeading a { color: var(--color-accent); font-size: 13px; font-weight: 800; }
+.profilePostCard { display: block; padding: 16px; border: 1px solid var(--color-line); border-radius: var(--radius-lg); background: var(--color-surface-raised); }
+.profilePostCard p { margin: 10px 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.profilePostMeta,.profilePostStats { display: flex; gap: 10px; align-items: center; color: var(--color-muted); font-size: 12px; }
+.profilePostMeta { justify-content: space-between; }
+.profilePostMeta span { color: var(--color-accent); font-weight: 800; }
+.profileEditForm { padding: 0 20px 30px; }
 @media (max-width: 620px) {
   .profileHero { grid-template-columns: auto 1fr; }
   .profileActions { grid-column: 1 / -1; width: 100%; }
