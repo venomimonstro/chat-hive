@@ -15,6 +15,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/groups"
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
+	"github.com/venomimonstro/chat-hive/backend/internal/media"
 	"github.com/venomimonstro/chat-hive/backend/internal/messaging"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 	"github.com/venomimonstro/chat-hive/backend/internal/posts"
@@ -90,6 +91,14 @@ func main() {
 	searchService := search.NewService(search.NewPostgresStore(pool))
 	searchHTTP := search.NewHTTPHandler(searchService, identityService, logger)
 
+	mediaFiles, err := media.NewFileStorageFromEnv()
+	if err != nil {
+		logger.Error("media storage configuration failed", "error", err)
+		os.Exit(1)
+	}
+	mediaService := media.NewService(media.NewPostgresStore(pool), mediaFiles)
+	mediaHTTP := media.NewHTTPHandler(mediaService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
@@ -99,6 +108,7 @@ func main() {
 	app.Register(postsHTTP.Register)
 	app.Register(feedHTTP.Register)
 	app.Register(searchHTTP.Register)
+	app.Register(mediaHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 
