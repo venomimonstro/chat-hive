@@ -12,7 +12,7 @@ export function AppShell({ children, active = 'Чаты', wide = false }: { chil
           <a className={`appNav__item ${active === 'Открыть' ? 'isActive' : ''}`} href="/discover">
             <span aria-hidden="true">✦</span><b>Открыть</b>
           </a>
-          <button className="appNav__create" type="button" aria-label="Создать публикацию, группу или канал">+</button>
+          <a className="appNav__create" href="/create" aria-label="Создать публикацию, группу или канал">+</a>
           <a className={`appNav__item ${active === 'Я' ? 'isActive' : ''}`} href="/me">
             <span aria-hidden="true">◉</span><b>Я</b>
           </a>
