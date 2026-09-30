@@ -7,13 +7,18 @@ import {
   ChatMessage, ChatSummary, ensureDirectChat, getCurrentSession, listChats, listMessages,
   markChatRead, sendTextMessage
 } from '../lib/api';
-import { deleteChatMessage, editChatMessage } from '../lib/messageActions';
+import {
+  deleteChatMessage, editChatMessage, listReactionBatch, ReactionSummary, setChatMessageReaction
+} from '../lib/messageActions';
+import { getGroupDetails, moderateDeleteGroupMessage } from '../lib/groupActions';
 import {
   enqueueOutbox, findOutbox, listOutbox, migrateLegacyOutbox, OutboxItem, removeOutbox
 } from '../lib/outbox';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
+type GroupRole = 'owner' | 'admin' | 'member' | null;
 const PAGE_SIZE = 50;
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥'];
 
 function chatName(chat: ChatSummary) {
   return chat.kind === 'direct' ? (chat.peer_display_name || chat.peer_username || 'Диалог') : (chat.title || 'Группа');
@@ -55,6 +60,8 @@ export function ChatsClient() {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selected, setSelected] = useState<ChatSummary | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
+  const [reactions, setReactions] = useState<Record<string, ReactionSummary[]>>({});
+  const [groupRole, setGroupRole] = useState<GroupRole>(null);
   const [loading, setLoading] = useState(true);
   const [messageLoading, setMessageLoading] = useState(false);
   const [olderLoading, setOlderLoading] = useState(false);
@@ -74,7 +81,20 @@ export function ChatsClient() {
     setReplyingTo(null);
     setEditing(null);
     setDraft('');
+    setReactions({});
+    setGroupRole(null);
     replaceChatQuery(chat?.chat_id);
+  }
+
+  async function loadReactions(items: LocalMessage[]) {
+    const ids = items.filter((item) => !item.local_status && !item.deleted_at && !item.id.startsWith('local-')).map((item) => item.id).slice(0, 100);
+    if (ids.length === 0) return;
+    try {
+      const batch = await listReactionBatch(ids);
+      setReactions((current) => ({ ...current, ...batch }));
+    } catch {
+      // Reactions are non-critical metadata; message history must stay usable.
+    }
   }
 
   async function refreshChats() {
@@ -156,8 +176,18 @@ export function ChatsClient() {
     if (!selected) {
       setMessages([]);
       setHasOlder(false);
+      setGroupRole(null);
       return;
     }
+
+    if (selected.kind === 'group') {
+      void getGroupDetails(selected.chat_id)
+        .then((group) => setGroupRole(group.role))
+        .catch(() => setGroupRole(null));
+    } else {
+      setGroupRole(null);
+    }
+
     let active = true;
     setMessageLoading(true);
     Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(selected.chat_id)])
@@ -167,7 +197,9 @@ export function ChatsClient() {
         setHasOlder(items.length === PAGE_SIZE);
         const pending = queued.map((item) => asLocalMessage(item, userId));
         const serverIDs = new Set(ordered.map((item) => item.client_message_id));
-        setMessages([...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))]);
+        const combined = [...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
+        setMessages(combined);
+        void loadReactions(ordered);
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       })
@@ -189,7 +221,7 @@ export function ChatsClient() {
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       } catch {
-        // REST polling is temporary transport. IndexedDB preserves unsent messages.
+        // REST polling remains the recovery transport while realtime is hardened.
       }
     }, 3000);
 
@@ -217,6 +249,7 @@ export function ChatsClient() {
       const ordered = [...items].reverse();
       setMessages((current) => [...ordered, ...current]);
       setHasOlder(items.length === PAGE_SIZE);
+      void loadReactions(ordered);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
     } finally {
@@ -312,6 +345,7 @@ export function ChatsClient() {
     try {
       await deleteChatMessage(message.id);
       setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: '', deleted_at: new Date().toISOString() } : item));
+      setReactions((current) => { const next = { ...current }; delete next[message.id]; return next; });
       if (editing?.id === message.id) {
         setEditing(null);
         setDraft('');
@@ -319,6 +353,31 @@ export function ChatsClient() {
       if (replyingTo?.id === message.id) setReplyingTo(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось удалить сообщение');
+    }
+  }
+
+  async function moderateRemoveMessage(message: LocalMessage) {
+    if (!selected || selected.kind !== 'group' || (groupRole !== 'owner' && groupRole !== 'admin') || message.sender_id === userId) return;
+    try {
+      await moderateDeleteGroupMessage(selected.chat_id, message.id);
+      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: '', deleted_at: new Date().toISOString() } : item));
+      setReactions((current) => { const next = { ...current }; delete next[message.id]; return next; });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить сообщение как модератор');
+    }
+  }
+
+  async function toggleReaction(message: LocalMessage, reaction: string) {
+    if (message.local_status || message.deleted_at) return;
+    const current = reactions[message.id] ?? [];
+    const summary = current.find((item) => item.reaction === reaction);
+    const enabled = !(summary?.mine ?? false);
+    try {
+      await setChatMessageReaction(message.id, reaction, enabled);
+      const batch = await listReactionBatch([message.id]);
+      setReactions((items) => ({ ...items, [message.id]: batch[message.id] ?? [] }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось изменить реакцию');
     }
   }
 
@@ -369,7 +428,7 @@ export function ChatsClient() {
               <header className="conversationHeader">
                 <IconButton className="conversationBack" type="button" aria-label="Назад к чатам" onClick={() => chooseChat(null)}>‹</IconButton>
                 <Avatar name={chatName(selected)} size="sm" />
-                <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : <span>Группа</span>}</div>
+                <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : <span>{groupRole === 'owner' ? 'Группа · владелец' : groupRole === 'admin' ? 'Группа · администратор' : 'Группа'}</span>}</div>
                 {selected.kind === 'group' ? <a className="conversationSettings" href={`/groups/${selected.chat_id}`} aria-label="Настройки группы">•••</a> : null}
               </header>
               <div className="messageList" aria-live="polite">
@@ -378,11 +437,18 @@ export function ChatsClient() {
                 {messages.map((message) => {
                   const mine = message.sender_id === userId;
                   const replied = message.reply_to_id ? messageByID.get(message.reply_to_id) : undefined;
+                  const messageReactions = reactions[message.id] ?? [];
+                  const canModerate = selected.kind === 'group' && !mine && (groupRole === 'owner' || groupRole === 'admin');
                   return (
                     <div className={`messageRow ${mine ? 'isMine' : ''}`} key={message.client_message_id}>
                       <div className={`messageBubble ${message.local_status === 'failed' ? 'isFailed' : ''}`}>
                         {replied ? <button className="messageReplyPreview" type="button" onClick={() => document.getElementById(`message-${replied.id}`)?.scrollIntoView({ block: 'center' })}>{replied.body || 'Сообщение удалено'}</button> : null}
                         <p id={`message-${message.id}`}>{message.deleted_at ? 'Сообщение удалено' : message.body}</p>
+                        {messageReactions.length > 0 ? (
+                          <div className="messageReactionSummary" aria-label="Реакции">
+                            {messageReactions.map((item) => <button key={item.reaction} type="button" className={item.mine ? 'isMine' : ''} onClick={() => void toggleReaction(message, item.reaction)}>{item.reaction}<span>{item.count}</span></button>)}
+                          </div>
+                        ) : null}
                         <div className="messageMeta">
                           <time>{formatTime(message.created_at)}</time>
                           {message.edited_at ? <span>изменено</span> : null}
@@ -392,8 +458,10 @@ export function ChatsClient() {
                         {!message.local_status && !message.deleted_at ? (
                           <div className="messageActions">
                             <button type="button" onClick={() => beginReply(message)}>Ответить</button>
+                            {QUICK_REACTIONS.map((reaction) => <button type="button" className="reactionQuickAction" key={reaction} aria-label={`Реакция ${reaction}`} onClick={() => void toggleReaction(message, reaction)}>{reaction}</button>)}
                             {mine ? <button type="button" onClick={() => beginEdit(message)}>Изменить</button> : null}
                             {mine ? <button type="button" className="danger" onClick={() => void removeMessage(message)}>Удалить</button> : null}
+                            {canModerate ? <button type="button" className="danger" onClick={() => void moderateRemoveMessage(message)}>Удалить как модератор</button> : null}
                           </div>
                         ) : null}
                       </div>
