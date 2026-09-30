@@ -4,6 +4,7 @@ import './auth.css';
 import './onboarding.css';
 import './profile.css';
 import './security.css';
+import './messenger.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
