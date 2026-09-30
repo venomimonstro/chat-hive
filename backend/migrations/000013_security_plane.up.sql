@@ -20,7 +20,7 @@ CREATE TABLE security_events (
     event_type TEXT NOT NULL,
     severity TEXT NOT NULL CHECK (severity IN ('info','low','medium','high','critical')),
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    session_id UUID REFERENCES user_sessions(id) ON DELETE SET NULL,
+    session_id UUID REFERENCES sessions(id) ON DELETE SET NULL,
     source_ip INET,
     subject_type TEXT NOT NULL DEFAULT '',
     subject_id TEXT NOT NULL DEFAULT '',
