@@ -42,16 +42,17 @@ func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Kind       string `json:"kind"`
-		Body       string `json:"body"`
-		Visibility string `json:"visibility"`
+		Kind       string   `json:"kind"`
+		Body       string   `json:"body"`
+		Visibility string   `json:"visibility"`
+		MediaIDs   []string `json:"media_ids"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
 	post, err := h.service.Create(r.Context(), CreateInput{
-		AuthorID: session.UserID, Kind: body.Kind, Body: body.Body, Visibility: body.Visibility,
+		AuthorID: session.UserID, Kind: body.Kind, Body: body.Body, Visibility: body.Visibility, MediaIDs: body.MediaIDs,
 	})
 	if err != nil {
 		h.domainError(w, err)
@@ -162,35 +163,23 @@ func (h *HTTPHandler) listReplies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (h *HTTPHandler) addReaction(w http.ResponseWriter, r *http.Request) {
-	h.setReaction(w, r, true)
-}
-
-func (h *HTTPHandler) removeReaction(w http.ResponseWriter, r *http.Request) {
-	h.setReaction(w, r, false)
-}
+func (h *HTTPHandler) addReaction(w http.ResponseWriter, r *http.Request) { h.setReaction(w, r, true) }
+func (h *HTTPHandler) removeReaction(w http.ResponseWriter, r *http.Request) { h.setReaction(w, r, false) }
 
 func (h *HTTPHandler) setReaction(w http.ResponseWriter, r *http.Request, enabled bool) {
 	session, ok := h.authenticate(w, r)
 	if !ok {
 		return
 	}
-	if err := h.service.SetReaction(
-		r.Context(), session.UserID, r.PathValue("post_id"), r.PathValue("reaction"), enabled,
-	); err != nil {
+	if err := h.service.SetReaction(r.Context(), session.UserID, r.PathValue("post_id"), r.PathValue("reaction"), enabled); err != nil {
 		h.domainError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTPHandler) save(w http.ResponseWriter, r *http.Request) {
-	h.setSaved(w, r, true)
-}
-
-func (h *HTTPHandler) unsave(w http.ResponseWriter, r *http.Request) {
-	h.setSaved(w, r, false)
-}
+func (h *HTTPHandler) save(w http.ResponseWriter, r *http.Request) { h.setSaved(w, r, true) }
+func (h *HTTPHandler) unsave(w http.ResponseWriter, r *http.Request) { h.setSaved(w, r, false) }
 
 func (h *HTTPHandler) setSaved(w http.ResponseWriter, r *http.Request, saved bool) {
 	session, ok := h.authenticate(w, r)
@@ -221,9 +210,9 @@ func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (iden
 func (h *HTTPHandler) domainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidPost):
-		writeError(w, http.StatusBadRequest, "invalid_post", "Check publication data")
+		writeError(w, http.StatusBadRequest, "invalid_post", "Check post data")
 	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "post_not_found", "Publication not found")
+		writeError(w, http.StatusNotFound, "post_not_found", "Post not found")
 	case errors.Is(err, ErrForbidden):
 		writeError(w, http.StatusForbidden, "forbidden", "Action is not allowed")
 	default:
@@ -233,7 +222,7 @@ func (h *HTTPHandler) domainError(w http.ResponseWriter, err error) {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(destination)
