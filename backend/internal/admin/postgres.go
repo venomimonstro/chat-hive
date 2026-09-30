@@ -53,14 +53,32 @@ func (s *PostgresStore) ResolveCase(ctx context.Context, actor Principal, caseID
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil { return err }
 	defer func(){ _ = tx.Rollback(ctx) }()
-	var targetType, targetID, status string
-	if err := tx.QueryRow(ctx, `SELECT target_type,target_id::text,status FROM moderation_cases WHERE id=$1::uuid FOR UPDATE`, caseID).Scan(&targetType,&targetID,&status); err != nil {
+	var targetType, targetID, status, caseReason string
+	if err := tx.QueryRow(ctx, `SELECT target_type,target_id::text,status,reason FROM moderation_cases WHERE id=$1::uuid FOR UPDATE`, caseID).Scan(&targetType,&targetID,&status,&caseReason); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) { return ErrNotFound }
 		return err
 	}
 	if status != "open" && status != "reviewing" { return ErrInvalid }
 	nextStatus, action := "resolved", "case_resolved"
 	if decision == "dismiss" { nextStatus, action = "dismissed", "case_dismissed" }
+
+	// Review cases are approval workflows: dismissing the violation means public listing is approved;
+	// confirming the case means the requested public listing is rejected.
+	switch caseReason {
+	case "public_community_review":
+		entityStatus := "rejected"
+		if decision == "dismiss" { entityStatus = "approved" }
+		result, err := tx.Exec(ctx, `UPDATE communities SET moderation_status=$2,updated_at=now() WHERE chat_id=$1::uuid`, targetID, entityStatus)
+		if err != nil { return err }
+		if result.RowsAffected() != 1 { return ErrNotFound }
+	case "public_channel_review":
+		entityStatus := "rejected"
+		if decision == "dismiss" { entityStatus = "approved" }
+		result, err := tx.Exec(ctx, `UPDATE channels SET moderation_status=$2,updated_at=now() WHERE id=$1::uuid`, targetID, entityStatus)
+		if err != nil { return err }
+		if result.RowsAffected() != 1 { return ErrNotFound }
+	}
+
 	if _, err := tx.Exec(ctx, `UPDATE moderation_cases SET status=$2,reason=$3,updated_at=now(),resolved_at=now() WHERE id=$1::uuid`, caseID, nextStatus, reason); err != nil { return err }
 	if _, err := tx.Exec(ctx, `UPDATE reports SET status=CASE WHEN $2='dismissed' THEN 'dismissed' ELSE 'resolved' END,updated_at=now() WHERE id IN (SELECT report_id FROM moderation_case_reports WHERE case_id=$1::uuid)`, caseID, nextStatus); err != nil { return err }
 	if _, err := tx.Exec(ctx, `INSERT INTO moderation_actions(case_id,actor_id,action,target_type,target_id,reason) VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,$6)`, caseID, actor.UserID, action, targetType, targetID, reason); err != nil { return err }
