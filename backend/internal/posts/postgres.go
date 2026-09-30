@@ -14,16 +14,44 @@ type PostgresStore struct{ pool *pgxpool.Pool }
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore { return &PostgresStore{pool: pool} }
 
 func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Post, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Post{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const query = `
 		INSERT INTO posts (author_id, kind, body, visibility)
 		VALUES ($1::uuid,$2,$3,$4)
 		RETURNING id::text, author_id::text, kind, body, visibility,
 		          replies_count, reactions_count, created_at, updated_at`
 	var post Post
-	if err := s.pool.QueryRow(ctx, query, input.AuthorID, input.Kind, input.Body, input.Visibility).Scan(
+	if err := tx.QueryRow(ctx, query, input.AuthorID, input.Kind, input.Body, input.Visibility).Scan(
 		&post.ID, &post.AuthorID, &post.Kind, &post.Body, &post.Visibility,
 		&post.RepliesCount, &post.ReactionsCount, &post.CreatedAt, &post.UpdatedAt,
 	); err != nil {
+		return Post{}, err
+	}
+	for position, mediaID := range input.MediaIDs {
+		var ref MediaRef
+		const mediaQuery = `
+			SELECT id::text,mime_type,width,height
+			FROM media_objects
+			WHERE id=$1::uuid AND owner_id=$2::uuid AND state='ready' AND deleted_at IS NULL
+			FOR UPDATE`
+		if err := tx.QueryRow(ctx, mediaQuery, mediaID, input.AuthorID).Scan(&ref.ID, &ref.MimeType, &ref.Width, &ref.Height); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return Post{}, ErrForbidden
+			}
+			return Post{}, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO post_media(post_id,media_id,position) VALUES($1::uuid,$2::uuid,$3)`, post.ID, mediaID, position); err != nil {
+			return Post{}, err
+		}
+		ref.URL = "/api/v1/media/" + ref.ID + "/content"
+		post.Media = append(post.Media, ref)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return Post{}, err
 	}
 	post.Mine = true
@@ -51,7 +79,13 @@ func (s *PostgresStore) Get(ctx context.Context, viewerID, postID string) (Post,
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Post{}, ErrNotFound
 	}
-	return post, err
+	if err != nil {
+		return Post{}, err
+	}
+	if err := s.loadMedia(ctx, &post); err != nil {
+		return Post{}, err
+	}
+	return post, nil
 }
 
 func (s *PostgresStore) ListByAuthor(ctx context.Context, viewerID, username string, before time.Time, limit int) ([]Post, error) {
@@ -92,21 +126,37 @@ func (s *PostgresStore) ListByAuthor(ctx context.Context, viewerID, username str
 		}
 		items = append(items, post)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if err := s.loadMedia(ctx, &items[index]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (s *PostgresStore) Edit(ctx context.Context, authorID, postID, body string) (Post, error) {
 	const query = `
 		UPDATE posts p
 		SET body=$3, updated_at=now()
-		WHERE p.id=$1::uuid AND p.author_id=$2::uuid AND p.deleted_at IS NULL
-		RETURNING p.id::text, p.author_id::text, '', '', p.kind, p.body, p.visibility,
-		          p.replies_count, p.reactions_count, p.created_at, p.updated_at, true, false`
+		FROM profiles pr
+		WHERE p.id=$1::uuid AND p.author_id=$2::uuid AND p.deleted_at IS NULL AND pr.user_id=p.author_id
+		RETURNING p.id::text, p.author_id::text, pr.username, pr.display_name, p.kind, p.body, p.visibility,
+		          p.replies_count, p.reactions_count, p.created_at, p.updated_at, true,
+		          EXISTS(SELECT 1 FROM saved_posts sp WHERE sp.post_id=p.id AND sp.user_id=$2::uuid)`
 	post, err := scanPost(s.pool.QueryRow(ctx, query, postID, authorID, body))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Post{}, ErrNotFound
 	}
-	return post, err
+	if err != nil {
+		return Post{}, err
+	}
+	if err := s.loadMedia(ctx, &post); err != nil {
+		return Post{}, err
+	}
+	return post, nil
 }
 
 func (s *PostgresStore) Delete(ctx context.Context, authorID, postID string) error {
@@ -238,7 +288,6 @@ func (s *PostgresStore) SetReaction(ctx context.Context, userID, postID, reactio
 			if _, err := tx.Exec(ctx, `UPDATE posts SET reactions_count=GREATEST(0,reactions_count-1) WHERE id=$1::uuid`, postID); err != nil {
 				return err
 			}
-		}
 	}
 	return tx.Commit(ctx)
 }
@@ -265,6 +314,29 @@ func (s *PostgresStore) SetSaved(ctx context.Context, userID, postID string, sav
 	}
 	_, err := s.pool.Exec(ctx, `DELETE FROM saved_posts WHERE post_id=$1::uuid AND user_id=$2::uuid`, postID, userID)
 	return err
+}
+
+func (s *PostgresStore) loadMedia(ctx context.Context, post *Post) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.id::text,m.mime_type,m.width,m.height
+		FROM post_media pm
+		JOIN media_objects m ON m.id=pm.media_id AND m.state='ready' AND m.deleted_at IS NULL
+		WHERE pm.post_id=$1::uuid
+		ORDER BY pm.position ASC`, post.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	post.Media = nil
+	for rows.Next() {
+		var ref MediaRef
+		if err := rows.Scan(&ref.ID, &ref.MimeType, &ref.Width, &ref.Height); err != nil {
+			return err
+		}
+		ref.URL = "/api/v1/media/" + ref.ID + "/content"
+		post.Media = append(post.Media, ref)
+	}
+	return rows.Err()
 }
 
 type rowScanner interface{ Scan(dest ...any) error }
