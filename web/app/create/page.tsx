@@ -12,6 +12,7 @@ export default function CreatePage() {
         <a href="/create/post?kind=post" className="createHubCard"><span className="createHubIcon">≡</span><div><strong>Пост</strong><p>Развёрнутый текст для профиля и ленты Discover.</p></div></a>
         <a href="/groups/new" className="createHubCard"><span className="createHubIcon">◎</span><div><strong>Группа</strong><p>Общий чат с участниками, ролями и приглашениями.</p></div></a>
         <a href="/communities/new" className="createHubCard"><span className="createHubIcon">#</span><div><strong>Сообщество</strong><p>Тема, участники и общий чат. Публичные сообщества проходят модерацию.</p></div></a>
+        <a href="/channels/new" className="createHubCard"><span className="createHubIcon">◈</span><div><strong>Канал</strong><p>Публичные broadcast-публикации и подписчики. Канал появляется в каталоге после модерации.</p></div></a>
       </section>
     </AppShell>
   );
