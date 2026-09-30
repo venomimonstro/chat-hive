@@ -3,11 +3,13 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/AppShell';
+import { AuthenticatedImage } from '../../../components/AuthenticatedImage';
 import { Avatar, Button, Surface } from '../../../components/ui';
 import { getAccessToken, refreshSession } from '../../../lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
+type MediaRef = { id: string; mime_type: string; width: number; height: number; url: string };
 type Post = {
   id: string;
   author_id: string;
@@ -16,6 +18,7 @@ type Post = {
   kind: 'thought' | 'photo' | 'post';
   body: string;
   visibility: 'public' | 'followers';
+  media: MediaRef[];
   replies_count: number;
   reactions_count: number;
   created_at: string;
@@ -66,6 +69,8 @@ export default function PostPage() {
   const [reply, setReply] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [reactionPending, setReactionPending] = useState(false);
+  const [reactedLocally, setReactedLocally] = useState(false);
   const [error, setError] = useState('');
 
   async function load() {
@@ -82,7 +87,7 @@ export default function PostPage() {
     if (!repliesResponse.ok) throw new Error('Не удалось загрузить ответы');
     const postPayload = await postResponse.json() as Post;
     const repliesPayload = await repliesResponse.json() as { items: Reply[] };
-    setPost(postPayload);
+    setPost({ ...postPayload, media: postPayload.media ?? [] });
     setReplies(repliesPayload.items);
   }
 
@@ -117,9 +122,17 @@ export default function PostPage() {
   }
 
   async function react() {
-    if (!post) return;
-    const response = await authFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/reactions/${encodeURIComponent('❤️')}`, { method: 'PUT' });
-    if (response?.ok) setPost({ ...post, reactions_count: post.reactions_count + 1 });
+    if (!post || reactionPending || reactedLocally) return;
+    setReactionPending(true);
+    try {
+      const response = await authFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/reactions/${encodeURIComponent('❤️')}`, { method: 'PUT' });
+      if (response?.ok) {
+        setReactedLocally(true);
+        setPost((current) => current ? { ...current, reactions_count: current.reactions_count + 1 } : current);
+      }
+    } finally {
+      setReactionPending(false);
+    }
   }
 
   async function toggleSave() {
@@ -132,7 +145,7 @@ export default function PostPage() {
   return (
     <AppShell active="Открыть">
       <header className="screenHeader">
-        <div><span className="eyebrow">ПУБЛИКАЦИЯ</span><h1>{post?.kind === 'thought' ? 'Мысль' : 'Пост'}</h1></div>
+        <div><span className="eyebrow">ПУБЛИКАЦИЯ</span><h1>{post?.kind === 'thought' ? 'Мысль' : post?.kind === 'photo' ? 'Фото' : 'Пост'}</h1></div>
         <a href="/discover" aria-label="Назад">←</a>
       </header>
       <main className="postPageBody">
@@ -144,9 +157,14 @@ export default function PostPage() {
               <Avatar name={post.author_name || post.author_username} />
               <div><strong>{post.author_name || post.author_username}</strong><span>@{post.author_username} · {formatDate(post.created_at)}</span></div>
             </a>
-            <p className="postBody">{post.body}</p>
+            {post.media.length ? (
+              <div className={`postMediaGrid ${post.media.length === 1 ? 'single' : ''}`}>
+                {post.media.map((item) => <AuthenticatedImage key={item.id} className="postMediaImage" src={item.url} alt="Изображение публикации" />)}
+              </div>
+            ) : null}
+            {post.body ? <p className="postBody">{post.body}</p> : null}
             <div className="postActions">
-              <button type="button" onClick={react}>♡ {post.reactions_count}</button>
+              <button type="button" onClick={react} disabled={reactionPending || reactedLocally}>{reactedLocally ? '♥' : '♡'} {post.reactions_count}</button>
               <span>💬 {post.replies_count}</span>
               <button type="button" onClick={toggleSave}>{post.saved ? 'Сохранено' : 'Сохранить'}</button>
             </div>
