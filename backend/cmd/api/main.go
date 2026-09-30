@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/venomimonstro/chat-hive/backend/internal/config"
+	"github.com/venomimonstro/chat-hive/backend/internal/feed"
 	"github.com/venomimonstro/chat-hive/backend/internal/groups"
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
@@ -82,6 +83,9 @@ func main() {
 	postsService := posts.NewService(posts.NewPostgresStore(pool))
 	postsHTTP := posts.NewHTTPHandler(postsService, identityService, logger)
 
+	feedService := feed.NewService(feed.NewPostgresStore(pool))
+	feedHTTP := feed.NewHTTPHandler(feedService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
@@ -89,6 +93,7 @@ func main() {
 	app.Register(messagingHTTP.Register)
 	app.Register(groupsHTTP.Register)
 	app.Register(postsHTTP.Register)
+	app.Register(feedHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 
