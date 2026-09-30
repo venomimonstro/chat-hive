@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"strings"
@@ -49,6 +50,28 @@ func (s *PostgresStore) ListCases(ctx context.Context, statuses []string, limit 
 	return items, rows.Err()
 }
 
+func (s *PostgresStore) ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id,event_type,severity,user_id::text,session_id::text,source_ip::text,
+		       subject_type,subject_id,metadata,created_at
+		FROM security_events
+		WHERE ($1='' OR severity=$1)
+		ORDER BY created_at DESC,id DESC
+		LIMIT $2`, severity, limit)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	items := make([]SecurityEvent, 0, limit)
+	for rows.Next() {
+		var item SecurityEvent
+		var metadata []byte
+		if err := rows.Scan(&item.ID,&item.EventType,&item.Severity,&item.UserID,&item.SessionID,&item.SourceIP,&item.SubjectType,&item.SubjectID,&metadata,&item.CreatedAt); err != nil { return nil, err }
+		item.Metadata = map[string]any{}
+		if len(metadata) > 0 { if err := json.Unmarshal(metadata, &item.Metadata); err != nil { return nil, err } }
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil { return err }
@@ -62,8 +85,6 @@ func (s *PostgresStore) ResolveCase(ctx context.Context, actor Principal, caseID
 	nextStatus, action := "resolved", "case_resolved"
 	if decision == "dismiss" { nextStatus, action = "dismissed", "case_dismissed" }
 
-	// Review cases are approval workflows: dismissing the violation means public listing is approved;
-	// confirming the case means the requested public listing is rejected.
 	switch caseReason {
 	case "public_community_review":
 		entityStatus := "rejected"
