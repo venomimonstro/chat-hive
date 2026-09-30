@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/AppShell';
 import { Button, Surface } from '../../../components/ui';
+import { getAccessToken } from '../../../lib/api';
 import { Community, getCommunity, joinCommunity, leaveCommunity } from '../../../lib/communities';
 
 export default function CommunityPage() {
@@ -15,21 +16,27 @@ export default function CommunityPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  function requireLogin() {
+    router.push(`/login?next=${encodeURIComponent(`/c/${slug}`)}`);
+  }
+
   async function load() {
     setError('');
     try { setCommunity(await getCommunity(slug)); }
-    catch (err) {
-      if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
-      setError(err instanceof Error ? err.message : 'Сообщество недоступно');
-    } finally { setLoading(false); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Сообщество недоступно'); }
+    finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, [slug]);
 
   async function join() {
-    if (busy) return; setBusy(true); setError('');
+    if (busy) return;
+    if (!getAccessToken()) { requireLogin(); return; }
+    setBusy(true); setError('');
     try { setCommunity(await joinCommunity(slug)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Не удалось вступить'); }
-    finally { setBusy(false); }
+    catch (err) {
+      if (err instanceof Error && err.message === 'Authentication required') { requireLogin(); return; }
+      setError(err instanceof Error ? err.message : 'Не удалось вступить');
+    } finally { setBusy(false); }
   }
   async function leave() {
     if (busy) return; setBusy(true); setError('');
