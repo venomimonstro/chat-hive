@@ -14,17 +14,18 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore { return &PostgresStore
 
 func (s *PostgresStore) List(ctx context.Context, userID string, limit int) ([]Notification, int64, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text,kind,actor_id::text,entity_type,entity_id,title,body,read_at,created_at
-		FROM notifications
-		WHERE user_id=$1::uuid
-		ORDER BY created_at DESC,id DESC
+		SELECT n.id::text,n.kind,n.actor_id::text,COALESCE(p.username,''),n.entity_type,n.entity_id,n.title,n.body,n.read_at,n.created_at
+		FROM notifications n
+		LEFT JOIN profiles p ON p.user_id=n.actor_id
+		WHERE n.user_id=$1::uuid
+		ORDER BY n.created_at DESC,n.id DESC
 		LIMIT $2`, userID, limit)
 	if err != nil { return nil, 0, err }
 	defer rows.Close()
 	items := make([]Notification, 0, limit)
 	for rows.Next() {
 		var item Notification
-		if err := rows.Scan(&item.ID,&item.Kind,&item.ActorID,&item.EntityType,&item.EntityID,&item.Title,&item.Body,&item.ReadAt,&item.CreatedAt); err != nil { return nil,0,err }
+		if err := rows.Scan(&item.ID,&item.Kind,&item.ActorID,&item.ActorUsername,&item.EntityType,&item.EntityID,&item.Title,&item.Body,&item.ReadAt,&item.CreatedAt); err != nil { return nil,0,err }
 		items = append(items,item)
 	}
 	if err := rows.Err(); err != nil { return nil,0,err }
@@ -46,15 +47,13 @@ func (s *PostgresStore) MarkAllRead(ctx context.Context, userID string) error {
 }
 
 func (s *PostgresStore) Emit(ctx context.Context, input EmitInput) error {
-	var actor any
-	if input.ActorID != "" { actor = input.ActorID }
 	var dedupe any
 	if input.DedupeKey != "" { dedupe = input.DedupeKey }
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO notifications(user_id,kind,actor_id,entity_type,entity_id,title,body,dedupe_key)
 		VALUES($1::uuid,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8)
 		ON CONFLICT (user_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
-		input.UserID,input.Kind,stringOrEmpty(actor),input.EntityType,input.EntityID,input.Title,input.Body,dedupe,
+		input.UserID,input.Kind,input.ActorID,input.EntityType,input.EntityID,input.Title,input.Body,dedupe,
 	)
 	return err
 }
@@ -82,9 +81,3 @@ func (s *PostgresStore) RevokePushSubscription(ctx context.Context, userID, endp
 }
 
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
-
-func stringOrEmpty(value any) string {
-	if value == nil { return "" }
-	if text, ok := value.(string); ok { return text }
-	return ""
-}
