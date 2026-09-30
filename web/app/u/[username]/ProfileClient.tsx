@@ -142,8 +142,8 @@ export function ProfileClient({ username }: { username: string }) {
             </div>
 
             <div className="profileStats">
-              <div><strong>{profile.followers_count}</strong><span>подписчиков</span></div>
-              <div><strong>{profile.following_count}</strong><span>подписок</span></div>
+              <a href={`/u/${profile.username}/connections?tab=followers`}><strong>{profile.followers_count}</strong><span>подписчиков</span></a>
+              <a href={`/u/${profile.username}/connections?tab=following`}><strong>{profile.following_count}</strong><span>подписок</span></a>
             </div>
 
             {profile.bio ? <p className="profileBio">{profile.bio}</p> : null}
