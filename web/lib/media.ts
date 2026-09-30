@@ -13,10 +13,11 @@ export type MediaObject = {
   url: string;
 };
 
-async function authHeader() {
+async function requiredAuthHeader() {
   let access = getAccessToken();
   if (!access) access = (await refreshSession())?.access_token ?? null;
-  return access ? { Authorization: `Bearer ${access}` } : {};
+  if (!access) throw new Error('Необходимо войти снова.');
+  return { Authorization: `Bearer ${access}` };
 }
 
 export async function uploadImage(file: File): Promise<MediaObject> {
@@ -24,7 +25,7 @@ export async function uploadImage(file: File): Promise<MediaObject> {
   if (file.size <= 0 || file.size > 8 * 1024 * 1024) throw new Error('Размер изображения должен быть не больше 8 МБ.');
   const form = new FormData();
   form.append('file', file, file.name);
-  let headers = await authHeader();
+  let headers = await requiredAuthHeader();
   let response = await fetch(`${API_BASE}/api/v1/media/images`, { method: 'POST', body: form, credentials: 'include', headers });
   if (response.status === 401) {
     const refreshed = await refreshSession();
@@ -40,12 +41,17 @@ export async function uploadImage(file: File): Promise<MediaObject> {
 }
 
 export async function fetchMediaBlob(url: string): Promise<Blob> {
-  let headers = await authHeader();
+  const access = getAccessToken();
+  const headers: Record<string,string> = access ? { Authorization: `Bearer ${access}` } : {};
   let response = await fetch(`${API_BASE}${url}`, { credentials: 'include', cache: 'force-cache', headers });
-  if (response.status === 401) {
+
+  // A stale in-memory token may fail while the object is actually public. Refresh once;
+  // if there is no valid session, retry anonymously. The backend remains the authority
+  // and returns private/follower/chat media only when access is allowed.
+  if (response.status === 401 && access) {
     const refreshed = await refreshSession();
-    headers = refreshed ? { Authorization: `Bearer ${refreshed.access_token}` } : {};
-    response = await fetch(`${API_BASE}${url}`, { credentials: 'include', cache: 'force-cache', headers });
+    const retryHeaders: Record<string,string> = refreshed ? { Authorization: `Bearer ${refreshed.access_token}` } : {};
+    response = await fetch(`${API_BASE}${url}`, { credentials: 'include', cache: 'force-cache', headers: retryHeaders });
   }
   if (!response.ok) throw new Error('Изображение недоступно');
   return response.blob();
