@@ -14,6 +14,7 @@ import { getGroupDetails, moderateDeleteGroupMessage } from '../lib/groupActions
 import {
   enqueueOutbox, findOutbox, listOutbox, migrateLegacyOutbox, OutboxItem, removeOutbox
 } from '../lib/outbox';
+import type { RealtimeEvent } from '../lib/realtime';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 type GroupRole = 'owner' | 'admin' | 'member' | null;
@@ -75,6 +76,7 @@ export function ChatsClient() {
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
+  const syncingChatsRef = useRef(new Set<string>());
 
   function chooseChat(chat: ChatSummary | null) {
     setSelected(chat);
@@ -107,6 +109,30 @@ export function ChatsClient() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить чаты');
+    }
+  }
+
+  async function syncLatest(chatID: string) {
+    if (!chatID || syncingChatsRef.current.has(chatID)) return;
+    syncingChatsRef.current.add(chatID);
+    try {
+      const [items, queued] = await Promise.all([listMessages(chatID, undefined, PAGE_SIZE), listOutbox(chatID)]);
+      if (selectedIdRef.current !== chatID) return;
+      const ordered = [...items].reverse();
+      const pending = queued.map((item) => asLocalMessage(item, userId));
+      setMessages((current) => {
+        const firstSequence = ordered[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
+        const older = current.filter((item) => item.sequence < firstSequence && !item.local_status);
+        const serverIDs = new Set(ordered.map((item) => item.client_message_id));
+        return [...older, ...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
+      });
+      void loadReactions(ordered);
+      const last = ordered.at(-1);
+      if (last) await markChatRead(chatID, last.sequence).catch(() => undefined);
+    } catch {
+      // REST polling/recovery will retry. Realtime never becomes the durable source of truth.
+    } finally {
+      syncingChatsRef.current.delete(chatID);
     }
   }
 
@@ -172,6 +198,18 @@ export function ChatsClient() {
   }, []);
 
   useEffect(() => {
+    const listener = (rawEvent: Event) => {
+      const event = rawEvent as CustomEvent<RealtimeEvent>;
+      const detail = event.detail;
+      if (!detail || detail.type !== 'message.created' || !detail.chat_id) return;
+      void refreshChats();
+      if (detail.chat_id === selectedIdRef.current) void syncLatest(detail.chat_id);
+    };
+    window.addEventListener('chat:realtime', listener as EventListener);
+    return () => window.removeEventListener('chat:realtime', listener as EventListener);
+  }, [userId]);
+
+  useEffect(() => {
     selectedIdRef.current = selected?.chat_id ?? '';
     if (!selected) {
       setMessages([]);
@@ -206,23 +244,8 @@ export function ChatsClient() {
       .catch((err) => active && setError(err instanceof Error ? err.message : 'Не удалось загрузить сообщения'))
       .finally(() => active && setMessageLoading(false));
 
-    const timer = window.setInterval(async () => {
-      if (!active) return;
-      try {
-        const items = await listMessages(selected.chat_id, undefined, PAGE_SIZE);
-        const ordered = [...items].reverse();
-        const queued = await listOutbox(selected.chat_id);
-        const pending = queued.map((item) => asLocalMessage(item, userId));
-        setMessages((current) => {
-          const older = current.filter((item) => item.sequence < (ordered[0]?.sequence ?? Number.MAX_SAFE_INTEGER) && !item.local_status);
-          const serverIDs = new Set(ordered.map((item) => item.client_message_id));
-          return [...older, ...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
-        });
-        const last = ordered.at(-1);
-        if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
-      } catch {
-        // REST polling remains the recovery transport while realtime is hardened.
-      }
+    const timer = window.setInterval(() => {
+      if (active) void syncLatest(selected.chat_id);
     }, 3000);
 
     return () => {
