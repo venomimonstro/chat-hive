@@ -32,7 +32,7 @@ export default function EditProfilePage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Не удалось загрузить профиль'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   function toggleInterest(slug: string) {
     setSelected((current) => current.includes(slug) ? current.filter((item) => item !== slug) : current.length < 12 ? [...current, slug] : current);
@@ -65,12 +65,12 @@ export default function EditProfilePage() {
         <form className="onboardingForm profileEditForm" onSubmit={submit}>
           <label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} maxLength={32} autoComplete="username" /></label>
           <label><span>Имя</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={80} /></label>
-          <label><span>О себе</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={500} rows={4} /></label>
+          <label><span>О себе <small>{bio.length}/240</small></span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={240} rows={4} /></label>
           <fieldset className="interestFieldset">
             <legend>Интересы <small>{selected.length}/12</small></legend>
             <div className="interestGrid">
               {interests.map((interest) => (
-                <button type="button" className={selected.includes(interest.slug) ? 'isSelected' : ''} onClick={() => toggleInterest(interest.slug)} key={interest.slug}>
+                <button type="button" className={`interestChip${selected.includes(interest.slug) ? ' isSelected' : ''}`} onClick={() => toggleInterest(interest.slug)} key={interest.slug}>
                   {interest.label_ru}
                 </button>
               ))}
