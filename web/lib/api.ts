@@ -224,9 +224,11 @@ export async function ensureDirectChat(username: string): Promise<ChatSummary> {
   return response.json() as Promise<ChatSummary>;
 }
 
-export async function listMessages(chatId: string, beforeSequence?: number): Promise<ChatMessage[]> {
-  const query = beforeSequence ? `?before_sequence=${beforeSequence}` : '';
-  const response = await request(`/api/v1/chats/${encodeURIComponent(chatId)}/messages${query}`);
+export async function listMessages(chatId: string, beforeSequence?: number, limit = 50): Promise<ChatMessage[]> {
+  const params = new URLSearchParams();
+  if (beforeSequence) params.set('before_sequence', String(beforeSequence));
+  params.set('limit', String(Math.min(100, Math.max(1, limit))));
+  const response = await request(`/api/v1/chats/${encodeURIComponent(chatId)}/messages?${params.toString()}`);
   if (!response.ok) throw new Error(await parseError(response));
   const payload = await response.json() as { items: ChatMessage[] };
   return payload.items;
