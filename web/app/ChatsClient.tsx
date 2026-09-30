@@ -8,11 +8,11 @@ import {
   markChatRead, sendTextMessage
 } from '../lib/api';
 import { deleteChatMessage, editChatMessage } from '../lib/messageActions';
+import {
+  enqueueOutbox, findOutbox, listOutbox, migrateLegacyOutbox, OutboxItem, removeOutbox
+} from '../lib/outbox';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
-type OutboxItem = { chat_id: string; client_message_id: string; body: string; created_at: string; reply_to_id?: string };
-
-const OUTBOX_KEY = 'chat_outbox_v1';
 const PAGE_SIZE = 50;
 
 function chatName(chat: ChatSummary) {
@@ -27,28 +27,27 @@ function formatTime(value?: string) {
   return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
-function loadOutbox(): OutboxItem[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(OUTBOX_KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.chat_id === 'string' && typeof item.client_message_id === 'string' && typeof item.body === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveOutbox(items: OutboxItem[]) {
-  if (typeof window === 'undefined') return;
-  if (items.length === 0) window.localStorage.removeItem(OUTBOX_KEY);
-  else window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(-200)));
-}
-
 function replaceChatQuery(chatID?: string) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   if (chatID) url.searchParams.set('chat', chatID);
   else url.searchParams.delete('chat');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function asLocalMessage(item: OutboxItem, userId: string): LocalMessage {
+  return {
+    id: `local-${item.client_message_id}`,
+    chat_id: item.chat_id,
+    sender_id: userId,
+    client_message_id: item.client_message_id,
+    sequence: Number.MAX_SAFE_INTEGER,
+    type: 'text',
+    body: item.body,
+    reply_to_id: item.reply_to_id,
+    created_at: item.created_at,
+    local_status: typeof navigator !== 'undefined' && navigator.onLine ? 'sending' : 'failed'
+  };
 }
 
 export function ChatsClient() {
@@ -92,46 +91,54 @@ export function ChatsClient() {
   }
 
   async function flushOutbox() {
-    if (flushingRef.current || typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (flushingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
     flushingRef.current = true;
     try {
-      const items = loadOutbox();
-      const remaining: OutboxItem[] = [];
+      const items = await listOutbox();
+      let delivered = 0;
       for (const item of items) {
         try {
           const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
+          await removeOutbox(item.client_message_id);
+          delivered++;
           if (selectedIdRef.current === item.chat_id) {
-            setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
+            setMessages((current) => [
+              ...current.filter((message) => message.client_message_id !== item.client_message_id),
+              result.message
+            ].sort((a, b) => a.sequence - b.sequence));
           }
         } catch {
-          remaining.push(item);
+          // Keep failed item in IndexedDB for a later retry.
         }
       }
-      saveOutbox(remaining);
-      if (items.length !== remaining.length) await refreshChats();
+      if (delivered > 0) await refreshChats();
+    } catch {
+      // IndexedDB failure must not crash the messenger shell.
     } finally {
       flushingRef.current = false;
     }
   }
 
   useEffect(() => {
-    Promise.all([getCurrentSession(), listChats()])
-      .then(([session, items]) => {
-        if (!session) {
-          window.location.replace('/login');
-          return;
-        }
-        setUserId(session.user_id);
-        setChats(items);
-        const requested = new URLSearchParams(window.location.search).get('chat');
-        if (requested) {
-          const match = items.find((item) => item.chat_id === requested);
-          if (match) setSelected(match);
-        }
-        void flushOutbox();
-      })
-      .catch(() => setError('Не удалось загрузить чаты'))
-      .finally(() => setLoading(false));
+    void migrateLegacyOutbox().finally(() => {
+      Promise.all([getCurrentSession(), listChats()])
+        .then(([session, items]) => {
+          if (!session) {
+            window.location.replace('/login');
+            return;
+          }
+          setUserId(session.user_id);
+          setChats(items);
+          const requested = new URLSearchParams(window.location.search).get('chat');
+          if (requested) {
+            const match = items.find((item) => item.chat_id === requested);
+            if (match) setSelected(match);
+          }
+          void flushOutbox();
+        })
+        .catch(() => setError('Не удалось загрузить чаты'))
+        .finally(() => setLoading(false));
+    });
   }, []);
 
   useEffect(() => {
@@ -153,23 +160,12 @@ export function ChatsClient() {
     }
     let active = true;
     setMessageLoading(true);
-    listMessages(selected.chat_id, undefined, PAGE_SIZE)
-      .then(async (items) => {
+    Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(selected.chat_id)])
+      .then(async ([items, queued]) => {
         if (!active) return;
         const ordered = [...items].reverse();
         setHasOlder(items.length === PAGE_SIZE);
-        const pending = loadOutbox().filter((item) => item.chat_id === selected.chat_id).map<LocalMessage>((item) => ({
-          id: `local-${item.client_message_id}`,
-          chat_id: item.chat_id,
-          sender_id: userId,
-          client_message_id: item.client_message_id,
-          sequence: Number.MAX_SAFE_INTEGER,
-          type: 'text',
-          body: item.body,
-          reply_to_id: item.reply_to_id,
-          created_at: item.created_at,
-          local_status: navigator.onLine ? 'sending' : 'failed'
-        }));
+        const pending = queued.map((item) => asLocalMessage(item, userId));
         const serverIDs = new Set(ordered.map((item) => item.client_message_id));
         setMessages([...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))]);
         const last = ordered.at(-1);
@@ -183,16 +179,17 @@ export function ChatsClient() {
       try {
         const items = await listMessages(selected.chat_id, undefined, PAGE_SIZE);
         const ordered = [...items].reverse();
+        const queued = await listOutbox(selected.chat_id);
+        const pending = queued.map((item) => asLocalMessage(item, userId));
         setMessages((current) => {
           const older = current.filter((item) => item.sequence < (ordered[0]?.sequence ?? Number.MAX_SAFE_INTEGER) && !item.local_status);
-          const pending = current.filter((item) => item.local_status === 'sending' || item.local_status === 'failed');
           const serverIDs = new Set(ordered.map((item) => item.client_message_id));
           return [...older, ...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
         });
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       } catch {
-        // REST polling is temporary transport. Durable outbox preserves unsent messages.
+        // REST polling is temporary transport. IndexedDB preserves unsent messages.
       }
     }, 3000);
 
@@ -247,8 +244,7 @@ export function ChatsClient() {
     setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'sending' } : message));
     try {
       const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
-      const remaining = loadOutbox().filter((queued) => queued.client_message_id !== item.client_message_id);
-      saveOutbox(remaining);
+      await removeOutbox(item.client_message_id);
       setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
       await refreshChats();
     } catch {
@@ -281,27 +277,21 @@ export function ChatsClient() {
       reply_to_id: replyingTo?.id,
       created_at: new Date().toISOString()
     };
-    saveOutbox([...loadOutbox(), item]);
+    try {
+      await enqueueOutbox(item);
+    } catch {
+      setError('Не удалось сохранить сообщение локально. Освободите место в браузере и попробуйте снова.');
+      return;
+    }
     setDraft('');
     setReplyingTo(null);
-    setMessages((current) => [...current, {
-      id: `local-${item.client_message_id}`,
-      chat_id: item.chat_id,
-      sender_id: userId,
-      client_message_id: item.client_message_id,
-      sequence: Number.MAX_SAFE_INTEGER,
-      type: 'text',
-      body: item.body,
-      reply_to_id: item.reply_to_id,
-      created_at: item.created_at,
-      local_status: navigator.onLine ? 'sending' : 'failed'
-    }]);
+    setMessages((current) => [...current, asLocalMessage(item, userId)]);
     if (navigator.onLine) await deliver(item);
   }
 
-  function retry(message: LocalMessage) {
-    const item = loadOutbox().find((queued) => queued.client_message_id === message.client_message_id);
-    if (item) void deliver(item);
+  async function retry(message: LocalMessage) {
+    const item = await findOutbox(message.client_message_id).catch(() => null);
+    if (item) await deliver(item);
   }
 
   function beginReply(message: LocalMessage) {
@@ -397,7 +387,7 @@ export function ChatsClient() {
                           <time>{formatTime(message.created_at)}</time>
                           {message.edited_at ? <span>изменено</span> : null}
                           {message.local_status === 'sending' ? <span>отправляем…</span> : null}
-                          {message.local_status === 'failed' ? <button type="button" onClick={() => retry(message)}>повторить</button> : null}
+                          {message.local_status === 'failed' ? <button type="button" onClick={() => void retry(message)}>повторить</button> : null}
                         </div>
                         {!message.local_status && !message.deleted_at ? (
                           <div className="messageActions">
