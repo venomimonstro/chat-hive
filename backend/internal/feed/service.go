@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-var ErrInvalidMode = errors.New("invalid feed mode")
+var (
+	ErrInvalidMode = errors.New("invalid feed mode")
+	ErrInvalidFeedback = errors.New("invalid feed feedback")
+)
 
 type MediaRef struct {
 	ID       string `json:"id"`
@@ -34,6 +37,7 @@ type Item struct {
 
 type Store interface {
 	List(ctx context.Context, userID, mode string, before time.Time, limit int) ([]Item, error)
+	SetFeedback(ctx context.Context, userID, postID, signal string) error
 }
 
 type Service struct{ store Store }
@@ -56,4 +60,31 @@ func (s *Service) List(ctx context.Context, userID, mode string, before time.Tim
 		limit = 50
 	}
 	return s.store.List(ctx, userID, mode, before, limit)
+}
+
+func (s *Service) SetFeedback(ctx context.Context, userID, postID, signal string) error {
+	userID = strings.TrimSpace(userID)
+	postID = strings.TrimSpace(postID)
+	signal = strings.ToLower(strings.TrimSpace(signal))
+	if userID == "" || !looksLikeUUID(postID) {
+		return ErrInvalidFeedback
+	}
+	switch signal {
+	case "more_like_this", "not_interested", "hide":
+	default:
+		return ErrInvalidFeedback
+	}
+	return s.store.SetFeedback(ctx, userID, postID, signal)
+}
+
+func looksLikeUUID(value string) bool {
+	if len(value) != 36 { return false }
+	for i, char := range value {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if char != '-' { return false }
+			continue
+		}
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) { return false }
+	}
+	return true
 }
