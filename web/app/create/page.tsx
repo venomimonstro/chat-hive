@@ -11,18 +11,18 @@ export default function CreatePage() {
           <span className="createHubIcon">✦</span>
           <div><strong>Мысль</strong><p>Короткая публикация до 700 символов для живого разговора.</p></div>
         </a>
+        <a href="/create/post?kind=photo" className="createHubCard">
+          <span className="createHubIcon">▣</span>
+          <div><strong>Фото</strong><p>До 10 изображений с безопасной серверной обработкой и подписью.</p></div>
+        </a>
         <a href="/create/post?kind=post" className="createHubCard">
           <span className="createHubIcon">≡</span>
-          <div><strong>Пост</strong><p>Развёрнутый текст для профиля и будущей ленты Discover.</p></div>
+          <div><strong>Пост</strong><p>Развёрнутый текст для профиля и ленты Discover.</p></div>
         </a>
         <a href="/groups/new" className="createHubCard">
           <span className="createHubIcon">◎</span>
           <div><strong>Группа</strong><p>Общий чат с участниками, ролями и приглашениями.</p></div>
         </a>
-        <div className="createHubCard isDisabled" aria-disabled="true">
-          <span className="createHubIcon">▣</span>
-          <div><strong>Фото</strong><p>Подключим после безопасного media pipeline: re-encode, EXIF stripping и object storage.</p></div>
-        </div>
       </section>
     </AppShell>
   );
