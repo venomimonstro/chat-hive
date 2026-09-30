@@ -30,17 +30,18 @@ type ChatSummary struct {
 }
 
 type Message struct {
-	ID              string     `json:"id"`
-	ChatID          string     `json:"chat_id"`
-	SenderID        string     `json:"sender_id,omitempty"`
-	ClientMessageID string     `json:"client_message_id"`
-	Sequence        int64      `json:"sequence"`
-	Type            string     `json:"type"`
-	Body            string     `json:"body"`
-	ReplyToID       *string    `json:"reply_to_id,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	EditedAt        *time.Time `json:"edited_at,omitempty"`
-	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	ID              string            `json:"id"`
+	ChatID          string            `json:"chat_id"`
+	SenderID        string            `json:"sender_id,omitempty"`
+	ClientMessageID string            `json:"client_message_id"`
+	Sequence        int64             `json:"sequence"`
+	Type            string            `json:"type"`
+	Body            string            `json:"body"`
+	ReplyToID       *string           `json:"reply_to_id,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	EditedAt        *time.Time        `json:"edited_at,omitempty"`
+	DeletedAt       *time.Time        `json:"deleted_at,omitempty"`
+	Reactions       []ReactionSummary `json:"reactions,omitempty"`
 }
 
 type ReactionSummary struct {
@@ -200,41 +201,27 @@ func validMessageBody(value string) bool {
 }
 
 func validReaction(value string) bool {
-	if value == "" || len([]rune(value)) > 8 {
-		return false
-	}
+	if value == "" || len([]rune(value)) > 8 { return false }
 	for _, r := range value {
-		if r <= 0x20 || r == '<' || r == '>' {
-			return false
-		}
+		if r <= 0x20 || r == '<' || r == '>' { return false }
 	}
 	return true
 }
 
 func normalizeLimit(value, fallback, maximum int) int {
-	if value <= 0 {
-		return fallback
-	}
-	if value > maximum {
-		return maximum
-	}
+	if value <= 0 { return fallback }
+	if value > maximum { return maximum }
 	return value
 }
 
 func looksLikeUUID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
+	if len(value) != 36 { return false }
 	for index, char := range value {
 		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if char != '-' {
-				return false
-			}
+			if char != '-' { return false }
 			continue
 		}
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
-			return false
-		}
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) { return false }
 	}
 	return true
 }
