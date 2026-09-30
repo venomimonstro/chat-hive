@@ -2,7 +2,10 @@ module github.com/venomimonstro/chat-hive/backend
 
 go 1.24
 
-require github.com/jackc/pgx/v5 v5.7.6
+require (
+	github.com/coder/websocket v1.8.15
+	github.com/jackc/pgx/v5 v5.7.6
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
