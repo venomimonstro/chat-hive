@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
+import { RealtimeBridge } from './RealtimeBridge';
 
 export function AppShell({ children, active = 'Чаты', wide = false }: { children: ReactNode; active?: 'Чаты' | 'Открыть' | 'Я'; wide?: boolean }) {
   return (
     <main className={`appShell ${wide ? 'appShell--wide' : ''}`}>
+      <RealtimeBridge />
       <section className={`appDevice ${wide ? 'appDevice--wide' : ''}`} aria-label="CHAT">
         <div className="appContent">{children}</div>
         <nav className="appNav" aria-label="Основная навигация">
