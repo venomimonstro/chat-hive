@@ -17,7 +17,7 @@ export type Community = {
   created_at: string;
 };
 
-async function call(path: string, init: RequestInit = {}) {
+async function authenticatedCall(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
   if (!access) access = (await refreshSession())?.access_token ?? null;
   if (!access) throw new Error('Authentication required');
@@ -35,37 +35,51 @@ async function call(path: string, init: RequestInit = {}) {
   return response;
 }
 
+async function publicRead(path: string) {
+  const access = getAccessToken();
+  const headers = new Headers({ Accept: 'application/json' });
+  if (access) headers.set('Authorization', `Bearer ${access}`);
+  let response = await fetch(`${API_BASE}${path}`, { headers, credentials: 'include', cache: 'no-store' });
+  if (response.status === 401 && access) {
+    const refreshed = await refreshSession();
+    const retryHeaders = new Headers({ Accept: 'application/json' });
+    if (refreshed) retryHeaders.set('Authorization', `Bearer ${refreshed.access_token}`);
+    response = await fetch(`${API_BASE}${path}`, { headers: retryHeaders, credentials: 'include', cache: 'no-store' });
+  }
+  return response;
+}
+
 async function errorMessage(response: Response) {
   const body = await response.json().catch(() => null);
   return body?.error?.message ?? 'Request failed';
 }
 
 export async function discoverCommunities(): Promise<Community[]> {
-  const response = await call('/api/v1/communities?limit=50');
+  const response = await publicRead('/api/v1/communities?limit=50');
   if (!response.ok) throw new Error(await errorMessage(response));
   const payload = await response.json() as { items: Community[] };
   return payload.items;
 }
 
 export async function getCommunity(slug: string): Promise<Community> {
-  const response = await call(`/api/v1/communities/${encodeURIComponent(slug)}`);
+  const response = await publicRead(`/api/v1/communities/${encodeURIComponent(slug)}`);
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json() as Promise<Community>;
 }
 
 export async function createCommunity(input: { slug: string; title: string; description: string; visibility: 'private' | 'public' }): Promise<Community> {
-  const response = await call('/api/v1/communities', { method: 'POST', body: JSON.stringify(input) });
+  const response = await authenticatedCall('/api/v1/communities', { method: 'POST', body: JSON.stringify(input) });
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json() as Promise<Community>;
 }
 
 export async function joinCommunity(slug: string): Promise<Community> {
-  const response = await call(`/api/v1/communities/${encodeURIComponent(slug)}/join`, { method: 'POST' });
+  const response = await authenticatedCall(`/api/v1/communities/${encodeURIComponent(slug)}/join`, { method: 'POST' });
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json() as Promise<Community>;
 }
 
 export async function leaveCommunity(slug: string) {
-  const response = await call(`/api/v1/communities/${encodeURIComponent(slug)}/leave`, { method: 'POST' });
+  const response = await authenticatedCall(`/api/v1/communities/${encodeURIComponent(slug)}/leave`, { method: 'POST' });
   if (!response.ok) throw new Error(await errorMessage(response));
 }
