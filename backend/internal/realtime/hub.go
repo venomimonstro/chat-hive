@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,9 +20,18 @@ type Event struct {
 	OccurredAt string `json:"occurred_at"`
 }
 
+type HubMetrics struct {
+	Connections int64 `json:"connections"`
+	Published   int64 `json:"published"`
+	Dropped     int64 `json:"dropped"`
+}
+
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]map[*Client]struct{}
+	mu          sync.RWMutex
+	clients     map[string]map[*Client]struct{}
+	connections atomic.Int64
+	published   atomic.Int64
+	dropped     atomic.Int64
 }
 
 type Client struct {
@@ -35,7 +45,10 @@ func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.clients[client.UserID] == nil { h.clients[client.UserID] = make(map[*Client]struct{}) }
-	h.clients[client.UserID][client] = struct{}{}
+	if _, exists := h.clients[client.UserID][client]; !exists {
+		h.clients[client.UserID][client] = struct{}{}
+		h.connections.Add(1)
+	}
 }
 
 func (h *Hub) Unregister(client *Client) {
@@ -43,7 +56,11 @@ func (h *Hub) Unregister(client *Client) {
 	defer h.mu.Unlock()
 	bucket := h.clients[client.UserID]
 	if bucket == nil { return }
-	if _, ok := bucket[client]; ok { delete(bucket, client); close(client.Send) }
+	if _, ok := bucket[client]; ok {
+		delete(bucket, client)
+		close(client.Send)
+		h.connections.Add(-1)
+	}
 	if len(bucket) == 0 { delete(h.clients, client.UserID) }
 }
 
@@ -53,11 +70,21 @@ func (h *Hub) Publish(userID string, event Event) {
 	for client := range bucket {
 		select {
 		case client.Send <- event:
+			h.published.Add(1)
 		default:
 			// Never let a slow browser block fan-out. The HTTP sync path remains authoritative.
+			h.dropped.Add(1)
 		}
 	}
 	h.mu.RUnlock()
+}
+
+func (h *Hub) Metrics() HubMetrics {
+	return HubMetrics{
+		Connections: h.connections.Load(),
+		Published:   h.published.Load(),
+		Dropped:     h.dropped.Load(),
+	}
 }
 
 type ticket struct {
