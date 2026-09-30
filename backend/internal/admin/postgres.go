@@ -52,7 +52,8 @@ func (s *PostgresStore) ListCases(ctx context.Context, statuses []string, limit 
 
 func (s *PostgresStore) ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id,event_type,severity,user_id::text,session_id::text,source_ip::text,
+		SELECT id,event_type,severity,
+		       COALESCE(user_id::text,''),COALESCE(session_id::text,''),COALESCE(source_ip::text,''),
 		       subject_type,subject_id,metadata,created_at
 		FROM security_events
 		WHERE ($1='' OR severity=$1)
@@ -63,8 +64,12 @@ func (s *PostgresStore) ListSecurityEvents(ctx context.Context, severity string,
 	items := make([]SecurityEvent, 0, limit)
 	for rows.Next() {
 		var item SecurityEvent
+		var userID, sessionID, sourceIP string
 		var metadata []byte
-		if err := rows.Scan(&item.ID,&item.EventType,&item.Severity,&item.UserID,&item.SessionID,&item.SourceIP,&item.SubjectType,&item.SubjectID,&metadata,&item.CreatedAt); err != nil { return nil, err }
+		if err := rows.Scan(&item.ID,&item.EventType,&item.Severity,&userID,&sessionID,&sourceIP,&item.SubjectType,&item.SubjectID,&metadata,&item.CreatedAt); err != nil { return nil, err }
+		if userID != "" { value := userID; item.UserID = &value }
+		if sessionID != "" { value := sessionID; item.SessionID = &value }
+		if sourceIP != "" { value := sourceIP; item.SourceIP = &value }
 		item.Metadata = map[string]any{}
 		if len(metadata) > 0 { if err := json.Unmarshal(metadata, &item.Metadata); err != nil { return nil, err } }
 		items = append(items, item)
