@@ -14,17 +14,18 @@ var (
 	ErrProfileNotFound   = errors.New("profile not found")
 	ErrInteractionDenied = errors.New("interaction denied")
 	ErrInvalidMessage    = errors.New("invalid message")
+	ErrMessageNotFound   = errors.New("message not found")
 )
 
 type ChatSummary struct {
-	ChatID           string   `json:"chat_id"`
-	Kind             string   `json:"kind"`
-	Title            string   `json:"title"`
-	PeerUsername     string   `json:"peer_username,omitempty"`
-	PeerDisplayName  string   `json:"peer_display_name,omitempty"`
-	LastMessage      *Message `json:"last_message,omitempty"`
-	LastReadSequence int64    `json:"last_read_sequence"`
-	UnreadCount      int64    `json:"unread_count"`
+	ChatID           string    `json:"chat_id"`
+	Kind             string    `json:"kind"`
+	Title            string    `json:"title"`
+	PeerUsername     string    `json:"peer_username,omitempty"`
+	PeerDisplayName  string    `json:"peer_display_name,omitempty"`
+	LastMessage      *Message  `json:"last_message,omitempty"`
+	LastReadSequence int64     `json:"last_read_sequence"`
+	UnreadCount      int64     `json:"unread_count"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
@@ -42,6 +43,12 @@ type Message struct {
 	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 }
 
+type ReactionSummary struct {
+	Reaction string `json:"reaction"`
+	Count    int64  `json:"count"`
+	Mine     bool   `json:"mine"`
+}
+
 type SendInput struct {
 	UserID          string
 	ChatID          string
@@ -55,6 +62,10 @@ type Store interface {
 	ListChats(ctx context.Context, userID string, limit int, beforeUpdatedAt string) ([]ChatSummary, error)
 	ListMessages(ctx context.Context, userID, chatID string, beforeSequence int64, limit int) ([]Message, error)
 	SendText(ctx context.Context, input SendInput) (Message, bool, error)
+	EditMessage(ctx context.Context, userID, messageID, body string) (Message, error)
+	DeleteMessage(ctx context.Context, userID, messageID string) error
+	SetReaction(ctx context.Context, userID, messageID, reaction string, enabled bool) error
+	ListReactions(ctx context.Context, userID, messageID string) ([]ReactionSummary, error)
 	MarkRead(ctx context.Context, userID, chatID string, sequence int64) error
 }
 
@@ -100,7 +111,7 @@ func (s *Service) SendText(ctx context.Context, input SendInput) (Message, bool,
 	if input.UserID == "" || input.ChatID == "" || len(input.ChatID) > 64 || !looksLikeUUID(input.ClientMessageID) {
 		return Message{}, false, ErrInvalidMessage
 	}
-	if len([]rune(input.Body)) < 1 || len([]rune(input.Body)) > 4096 {
+	if !validMessageBody(input.Body) {
 		return Message{}, false, ErrInvalidMessage
 	}
 	if input.ReplyToID != "" && !looksLikeUUID(input.ReplyToID) {
@@ -116,11 +127,88 @@ func (s *Service) SendText(ctx context.Context, input SendInput) (Message, bool,
 	return message, duplicate, nil
 }
 
+func (s *Service) EditMessage(ctx context.Context, userID, messageID, body string) (Message, error) {
+	userID = strings.TrimSpace(userID)
+	messageID = strings.TrimSpace(messageID)
+	body = strings.TrimSpace(body)
+	if userID == "" || !looksLikeUUID(messageID) || !validMessageBody(body) {
+		return Message{}, ErrInvalidMessage
+	}
+	message, err := s.store.EditMessage(ctx, userID, messageID, body)
+	if err != nil {
+		if errors.Is(err, ErrMessageNotFound) || errors.Is(err, ErrInteractionDenied) {
+			return Message{}, err
+		}
+		return Message{}, fmt.Errorf("edit message: %w", err)
+	}
+	return message, nil
+}
+
+func (s *Service) DeleteMessage(ctx context.Context, userID, messageID string) error {
+	if strings.TrimSpace(userID) == "" || !looksLikeUUID(strings.TrimSpace(messageID)) {
+		return ErrInvalidMessage
+	}
+	if err := s.store.DeleteMessage(ctx, userID, strings.TrimSpace(messageID)); err != nil {
+		if errors.Is(err, ErrMessageNotFound) || errors.Is(err, ErrInteractionDenied) {
+			return err
+		}
+		return fmt.Errorf("delete message: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) SetReaction(ctx context.Context, userID, messageID, reaction string, enabled bool) error {
+	userID = strings.TrimSpace(userID)
+	messageID = strings.TrimSpace(messageID)
+	reaction = strings.TrimSpace(reaction)
+	if userID == "" || !looksLikeUUID(messageID) || !validReaction(reaction) {
+		return ErrInvalidMessage
+	}
+	if err := s.store.SetReaction(ctx, userID, messageID, reaction, enabled); err != nil {
+		if errors.Is(err, ErrMessageNotFound) || errors.Is(err, ErrInteractionDenied) {
+			return err
+		}
+		return fmt.Errorf("set reaction: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) ListReactions(ctx context.Context, userID, messageID string) ([]ReactionSummary, error) {
+	if strings.TrimSpace(userID) == "" || !looksLikeUUID(strings.TrimSpace(messageID)) {
+		return nil, ErrInvalidMessage
+	}
+	items, err := s.store.ListReactions(ctx, userID, strings.TrimSpace(messageID))
+	if err != nil {
+		if errors.Is(err, ErrMessageNotFound) || errors.Is(err, ErrInteractionDenied) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("list reactions: %w", err)
+	}
+	return items, nil
+}
+
 func (s *Service) MarkRead(ctx context.Context, userID, chatID string, sequence int64) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(chatID) == "" || sequence < 0 {
 		return ErrInvalidMessage
 	}
 	return s.store.MarkRead(ctx, userID, chatID, sequence)
+}
+
+func validMessageBody(value string) bool {
+	runes := len([]rune(value))
+	return runes >= 1 && runes <= 4096
+}
+
+func validReaction(value string) bool {
+	if value == "" || len([]rune(value)) > 8 {
+		return false
+	}
+	for _, r := range value {
+		if r <= 0x20 || r == '<' || r == '>' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeLimit(value, fallback, maximum int) int {
