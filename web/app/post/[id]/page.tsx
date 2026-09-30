@@ -37,7 +37,21 @@ type Reply = {
   mine: boolean;
 };
 
-async function authFetch(path: string, init: RequestInit = {}) {
+async function publicRead(path: string) {
+  const access = getAccessToken();
+  const headers = new Headers({ Accept: 'application/json' });
+  if (access) headers.set('Authorization', `Bearer ${access}`);
+  let response = await fetch(`${API_BASE}${path}`, { headers, credentials: 'include', cache: 'no-store' });
+  if (response.status === 401 && access) {
+    const refreshed = await refreshSession();
+    const retryHeaders = new Headers({ Accept: 'application/json' });
+    if (refreshed) retryHeaders.set('Authorization', `Bearer ${refreshed.access_token}`);
+    response = await fetch(`${API_BASE}${path}`, { headers: retryHeaders, credentials: 'include', cache: 'no-store' });
+  }
+  return response;
+}
+
+async function authenticatedFetch(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
   if (!access) access = (await refreshSession())?.access_token ?? null;
   if (!access) return null;
@@ -48,10 +62,9 @@ async function authFetch(path: string, init: RequestInit = {}) {
   let response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
   if (response.status === 401) {
     const refreshed = await refreshSession();
-    if (refreshed) {
-      headers.set('Authorization', `Bearer ${refreshed.access_token}`);
-      response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
-    }
+    if (!refreshed) return null;
+    headers.set('Authorization', `Bearer ${refreshed.access_token}`);
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
   }
   return response;
 }
@@ -73,16 +86,17 @@ export default function PostPage() {
   const [reactedLocally, setReactedLocally] = useState(false);
   const [error, setError] = useState('');
 
+  function requireLogin() {
+    const next = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : `/post/${postId}`;
+    router.push(`/login?next=${encodeURIComponent(next)}`);
+  }
+
   async function load() {
     setError('');
     const [postResponse, repliesResponse] = await Promise.all([
-      authFetch(`/api/v1/posts/${encodeURIComponent(postId)}`),
-      authFetch(`/api/v1/posts/${encodeURIComponent(postId)}/replies?limit=100`)
+      publicRead(`/api/v1/posts/${encodeURIComponent(postId)}`),
+      publicRead(`/api/v1/posts/${encodeURIComponent(postId)}/replies?limit=100`)
     ]);
-    if (!postResponse || !repliesResponse) {
-      router.replace('/login');
-      return;
-    }
     if (!postResponse.ok) throw new Error('Публикация недоступна');
     if (!repliesResponse.ok) throw new Error('Не удалось загрузить ответы');
     const postPayload = await postResponse.json() as Post;
@@ -102,13 +116,10 @@ export default function PostPage() {
     setBusy(true);
     setError('');
     try {
-      const response = await authFetch(`/api/v1/posts/${encodeURIComponent(postId)}/replies`, {
+      const response = await authenticatedFetch(`/api/v1/posts/${encodeURIComponent(postId)}/replies`, {
         method: 'POST', body: JSON.stringify({ body: text })
       });
-      if (!response) {
-        router.replace('/login');
-        return;
-      }
+      if (!response) { requireLogin(); return; }
       if (!response.ok) throw new Error('Не удалось отправить ответ');
       const created = await response.json() as Reply;
       setReplies((current) => [...current, created]);
@@ -125,11 +136,13 @@ export default function PostPage() {
     if (!post || reactionPending || reactedLocally) return;
     setReactionPending(true);
     try {
-      const response = await authFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/reactions/${encodeURIComponent('❤️')}`, { method: 'PUT' });
-      if (response?.ok) {
-        setReactedLocally(true);
-        setPost((current) => current ? { ...current, reactions_count: current.reactions_count + 1 } : current);
-      }
+      const response = await authenticatedFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/reactions/${encodeURIComponent('❤️')}`, { method: 'PUT' });
+      if (!response) { requireLogin(); return; }
+      if (!response.ok) throw new Error('Не удалось поставить реакцию');
+      setReactedLocally(true);
+      setPost((current) => current ? { ...current, reactions_count: current.reactions_count + 1 } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось поставить реакцию');
     } finally {
       setReactionPending(false);
     }
@@ -138,8 +151,9 @@ export default function PostPage() {
   async function toggleSave() {
     if (!post) return;
     const next = !post.saved;
-    const response = await authFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/saved`, { method: next ? 'PUT' : 'DELETE' });
-    if (response?.ok) setPost({ ...post, saved: next });
+    const response = await authenticatedFetch(`/api/v1/posts/${encodeURIComponent(post.id)}/saved`, { method: next ? 'PUT' : 'DELETE' });
+    if (!response) { requireLogin(); return; }
+    if (response.ok) setPost({ ...post, saved: next });
   }
 
   return (
