@@ -12,9 +12,16 @@ duplicates="$(find backend/migrations -maxdepth 1 -type f -name '*.up.sql' -prin
 [[ -z "$duplicates" ]] || fail "duplicate migration versions: $duplicates"
 
 info "checking required operational documentation"
-for file in docs/MASTER_PLAN.md docs/SECURITY.md docs/SECURITY_INCIDENT_RUNBOOK.md docs/DISASTER_RECOVERY.md docs/RELEASE_CHECKLIST.md; do
+for file in docs/MASTER_PLAN.md docs/SECURITY.md docs/SECURITY_INCIDENT_RUNBOOK.md docs/DISASTER_RECOVERY.md docs/RELEASE_CHECKLIST.md docs/CLOSED_ALPHA_RUNBOOK.md; do
   [[ -s "$file" ]] || fail "missing $file"
 done
+
+if [[ "${CHAT_SKIP_MIGRATION_VERIFY:-0}" != "1" ]]; then
+  info "verifying clean PostgreSQL migration chain"
+  bash ops/migrations/verify-clean.sh
+else
+  printf 'WARNING: clean migration verification skipped explicitly. Do not use this setting for a release record.\n' >&2
+fi
 
 if command -v go >/dev/null 2>&1; then
   info "checking Go formatting"
@@ -53,4 +60,4 @@ if [[ "${CHAT_ENV:-}" == "production" ]]; then
 fi
 
 info "release code gates passed"
-printf 'NOTE: backup restore drill, load test, clean-DB migrations and independent pentest remain external release gates.\n'
+printf 'NOTE: backup restore drill, load test and independent pentest remain external release gates.\n'
