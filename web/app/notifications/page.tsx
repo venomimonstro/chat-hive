@@ -13,6 +13,7 @@ type NotificationItem = {
   id: string;
   kind: string;
   actor_id?: string;
+  actor_username?: string;
   entity_type: string;
   entity_id: string;
   title: string;
@@ -42,7 +43,7 @@ function notificationHref(item: NotificationItem) {
   if (item.entity_type === 'chat') return `/?chat=${encodeURIComponent(item.entity_id)}`;
   if (item.entity_type === 'post') return `/post/${encodeURIComponent(item.entity_id)}`;
   if (item.entity_type === 'channel') return `/channels/${encodeURIComponent(item.entity_id)}`;
-  if (item.entity_type === 'user') return `/u/id/${encodeURIComponent(item.entity_id)}`;
+  if (item.entity_type === 'user' && item.actor_username) return `/u/${encodeURIComponent(item.actor_username)}`;
   return '/';
 }
 
