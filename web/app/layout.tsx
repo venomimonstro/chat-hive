@@ -14,6 +14,7 @@ import './admin.css';
 import './community.css';
 import './channel.css';
 import './notifications.css';
+import './traffic.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
