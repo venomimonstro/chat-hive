@@ -30,12 +30,12 @@ const (
 )
 
 type Object struct {
-	ID        string `json:"id"`
-	MimeType  string `json:"mime_type"`
-	ByteSize  int64  `json:"byte_size"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	URL       string `json:"url"`
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	ByteSize int64  `json:"byte_size"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	URL      string `json:"url"`
 }
 
 type StoredObject struct {
@@ -71,14 +71,22 @@ func NewFileStorageFromEnv() (*FileStorage, error) {
 	return &FileStorage{root: absolute}, nil
 }
 
-func (s *FileStorage) Write(key string, data []byte) error {
+func (s *FileStorage) safePath(key string) (string, error) {
 	clean := filepath.Clean(key)
 	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-		return ErrInvalidImage
+		return "", ErrInvalidImage
 	}
 	path := filepath.Join(s.root, clean)
 	if !strings.HasPrefix(path, s.root+string(os.PathSeparator)) {
-		return ErrInvalidImage
+		return "", ErrInvalidImage
+	}
+	return path, nil
+}
+
+func (s *FileStorage) Write(key string, data []byte) error {
+	path, err := s.safePath(key)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
@@ -107,13 +115,20 @@ func (s *FileStorage) Write(key string, data []byte) error {
 	return os.Rename(tmpName, path)
 }
 
-func (s *FileStorage) Open(key string) (*os.File, error) {
-	clean := filepath.Clean(key)
-	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-		return nil, ErrNotFound
+func (s *FileStorage) Delete(key string) error {
+	path, err := s.safePath(key)
+	if err != nil {
+		return err
 	}
-	path := filepath.Join(s.root, clean)
-	if !strings.HasPrefix(path, s.root+string(os.PathSeparator)) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (s *FileStorage) Open(key string) (*os.File, error) {
+	path, err := s.safePath(key)
+	if err != nil {
 		return nil, ErrNotFound
 	}
 	return os.Open(path)
@@ -184,6 +199,7 @@ func (s *Service) UploadImage(ctx context.Context, ownerID string, input io.Read
 		Width: config.Width, Height: config.Height, SHA256: hash[:],
 	})
 	if err != nil {
+		_ = s.files.Delete(key)
 		return Object{}, err
 	}
 	object.URL = "/api/v1/media/" + object.ID + "/content"
