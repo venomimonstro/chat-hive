@@ -30,6 +30,19 @@ type Case struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type SecurityEvent struct {
+	ID          int64          `json:"id"`
+	EventType   string         `json:"event_type"`
+	Severity    string         `json:"severity"`
+	UserID      *string        `json:"user_id,omitempty"`
+	SessionID   *string        `json:"session_id,omitempty"`
+	SourceIP    *string        `json:"source_ip,omitempty"`
+	SubjectType string         `json:"subject_type"`
+	SubjectID   string         `json:"subject_id"`
+	Metadata    map[string]any `json:"metadata"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
 type AuditInput struct {
 	ActorUserID string
 	ActorRole   string
@@ -44,6 +57,7 @@ type AuditInput struct {
 type Store interface {
 	Principal(ctx context.Context, userID string) (Principal, error)
 	ListCases(ctx context.Context, statuses []string, limit int) ([]Case, error)
+	ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
 }
@@ -57,24 +71,27 @@ func (s *Service) Authorize(ctx context.Context, userID string, allowedRoles ...
 	if err != nil { return Principal{}, err }
 	allowed := make(map[string]struct{}, len(allowedRoles))
 	for _, role := range allowedRoles { allowed[role] = struct{}{} }
-	for _, role := range principal.Roles {
-		if _, ok := allowed[role]; ok { return principal, nil }
-	}
+	for _, role := range principal.Roles { if _, ok := allowed[role]; ok { return principal, nil } }
 	return Principal{}, ErrForbidden
 }
 
 func (s *Service) ListCases(ctx context.Context, principal Principal, limit int) ([]Case, error) {
 	if !hasAnyRole(principal, "moderator", "senior_moderator", "security", "legal", "owner") { return nil, ErrForbidden }
-	if limit <= 0 { limit = 50 }
-	if limit > 200 { limit = 200 }
+	if limit <= 0 { limit = 50 }; if limit > 200 { limit = 200 }
 	return s.store.ListCases(ctx, []string{"open", "reviewing"}, limit)
+}
+
+func (s *Service) ListSecurityEvents(ctx context.Context, principal Principal, severity string, limit int) ([]SecurityEvent, error) {
+	if !hasAnyRole(principal, "security", "owner") { return nil, ErrForbidden }
+	severity = strings.ToLower(strings.TrimSpace(severity))
+	if severity != "" && severity != "info" && severity != "low" && severity != "medium" && severity != "high" && severity != "critical" { return nil, ErrInvalid }
+	if limit <= 0 { limit = 100 }; if limit > 500 { limit = 500 }
+	return s.store.ListSecurityEvents(ctx, severity, limit)
 }
 
 func (s *Service) ResolveCase(ctx context.Context, principal Principal, caseID, decision, reason string) error {
 	if !hasAnyRole(principal, "senior_moderator", "security", "legal", "owner") { return ErrForbidden }
-	caseID = strings.TrimSpace(caseID)
-	decision = strings.ToLower(strings.TrimSpace(decision))
-	reason = strings.TrimSpace(reason)
+	caseID = strings.TrimSpace(caseID); decision = strings.ToLower(strings.TrimSpace(decision)); reason = strings.TrimSpace(reason)
 	if !looksLikeUUID(caseID) || (decision != "resolve" && decision != "dismiss") || len([]rune(reason)) < 3 || len([]rune(reason)) > 1000 { return ErrInvalid }
 	return s.store.ResolveCase(ctx, principal, caseID, decision, reason)
 }
