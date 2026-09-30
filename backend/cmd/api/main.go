@@ -16,6 +16,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 	"github.com/venomimonstro/chat-hive/backend/internal/messaging"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
+	"github.com/venomimonstro/chat-hive/backend/internal/posts"
 	"github.com/venomimonstro/chat-hive/backend/internal/social"
 )
 
@@ -78,12 +79,16 @@ func main() {
 	groupsService := groups.NewService(groups.NewPostgresStore(pool))
 	groupsHTTP := groups.NewHTTPHandler(groupsService, identityService, logger)
 
+	postsService := posts.NewService(posts.NewPostgresStore(pool))
+	postsHTTP := posts.NewHTTPHandler(postsService, identityService, logger)
+
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.Register(socialHTTP.Register)
 	app.Register(messagingHTTP.Register)
 	app.Register(groupsHTTP.Register)
+	app.Register(postsHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 
