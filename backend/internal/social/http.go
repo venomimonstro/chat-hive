@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
@@ -23,6 +24,8 @@ func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logge
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/profiles/{username}", h.getProfile)
+	mux.HandleFunc("GET /api/v1/profiles/{username}/followers", h.followers)
+	mux.HandleFunc("GET /api/v1/profiles/{username}/following", h.following)
 	mux.HandleFunc("POST /api/v1/profiles/{username}/follow", h.follow)
 	mux.HandleFunc("DELETE /api/v1/profiles/{username}/follow", h.unfollow)
 	mux.HandleFunc("POST /api/v1/profiles/{username}/block", h.block)
@@ -30,25 +33,44 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
-	viewerID := ""
-	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
-		session, ok := h.authenticate(w, r)
-		if !ok {
-			return
-		}
-		viewerID = session.UserID
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok {
+		return
 	}
 	profile, err := h.service.GetProfile(r.Context(), viewerID, r.PathValue("username"))
 	if err != nil {
-		if errors.Is(err, ErrProfileNotFound) {
-			writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
-			return
-		}
-		h.logger.Error("get public profile failed", "error", err)
-		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		h.profileError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, profile)
+}
+
+func (h *HTTPHandler) followers(w http.ResponseWriter, r *http.Request) {
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	items, err := h.service.ListFollowers(r.Context(), viewerID, r.PathValue("username"), limit)
+	if err != nil {
+		h.profileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) following(w http.ResponseWriter, r *http.Request) {
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	items, err := h.service.ListFollowing(r.Context(), viewerID, r.PathValue("username"), limit)
+	if err != nil {
+		h.profileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *HTTPHandler) follow(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +106,26 @@ func (h *HTTPHandler) mutate(w http.ResponseWriter, r *http.Request, action func
 		h.logger.Error("social graph mutation failed", "error", err, "user_id", session.UserID)
 		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 	}
+}
+
+func (h *HTTPHandler) optionalViewer(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
+		return "", true
+	}
+	session, ok := h.authenticate(w, r)
+	if !ok {
+		return "", false
+	}
+	return session.UserID, true
+}
+
+func (h *HTTPHandler) profileError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrProfileNotFound) {
+		writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+		return
+	}
+	h.logger.Error("profile request failed", "error", err)
+	writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
