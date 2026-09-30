@@ -27,6 +27,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/groups/{chat_id}", h.get)
 	mux.HandleFunc("GET /api/v1/groups/{chat_id}/members", h.members)
 	mux.HandleFunc("PUT /api/v1/groups/{chat_id}/members/{username}/role", h.setRole)
+	mux.HandleFunc("POST /api/v1/groups/{chat_id}/owner", h.transferOwnership)
 	mux.HandleFunc("DELETE /api/v1/groups/{chat_id}/members/{username}", h.removeMember)
 	mux.HandleFunc("POST /api/v1/groups/{chat_id}/leave", h.leave)
 	mux.HandleFunc("POST /api/v1/groups/{chat_id}/invites", h.createInvite)
@@ -36,9 +37,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 
 func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	var body struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
@@ -48,92 +47,76 @@ func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group, err := h.service.Create(r.Context(), session.UserID, body.Title, body.Description)
-	if err != nil {
-		h.domain(w, err)
-		return
-	}
+	if err != nil { h.domain(w, err); return }
 	writeJSON(w, http.StatusCreated, group)
 }
 
 func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	group, err := h.service.Get(r.Context(), session.UserID, r.PathValue("chat_id"))
-	if err != nil {
-		h.domain(w, err)
-		return
-	}
+	if err != nil { h.domain(w, err); return }
 	writeJSON(w, http.StatusOK, group)
 }
 
 func (h *HTTPHandler) members(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	items, err := h.service.ListMembers(r.Context(), session.UserID, r.PathValue("chat_id"), limit)
-	if err != nil {
-		h.domain(w, err)
-		return
-	}
+	if err != nil { h.domain(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *HTTPHandler) setRole(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Role string `json:"role"`
-	}
+	if !ok { return }
+	var body struct { Role string `json:"role"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
-	if err := h.service.SetRole(
-		r.Context(), session.UserID, r.PathValue("chat_id"), r.PathValue("username"), body.Role,
-	); err != nil {
-		h.domain(w, err)
+	if err := h.service.SetRole(r.Context(), session.UserID, r.PathValue("chat_id"), r.PathValue("username"), body.Role); err != nil {
+		h.domain(w, err); return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) transferOwnership(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.authenticate(w, r)
+	if !ok { return }
+	var body struct { Username string `json:"username"` }
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
+	}
+	if err := h.service.TransferOwnership(r.Context(), session.UserID, r.PathValue("chat_id"), body.Username); err != nil {
+		h.domain(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) removeMember(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if err := h.service.RemoveMember(
-		r.Context(), session.UserID, r.PathValue("chat_id"), r.PathValue("username"),
-	); err != nil {
-		h.domain(w, err)
-		return
+	if !ok { return }
+	if err := h.service.RemoveMember(r.Context(), session.UserID, r.PathValue("chat_id"), r.PathValue("username")); err != nil {
+		h.domain(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) leave(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	if err := h.service.Leave(r.Context(), session.UserID, r.PathValue("chat_id")); err != nil {
-		h.domain(w, err)
-		return
+		h.domain(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) createInvite(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	var body struct {
 		TTLHours int `json:"ttl_hours"`
 		MaxUses  int `json:"max_uses"`
@@ -142,51 +125,34 @@ func (h *HTTPHandler) createInvite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
-	token, err := h.service.CreateInvite(
-		r.Context(), session.UserID, r.PathValue("chat_id"), time.Duration(body.TTLHours)*time.Hour, body.MaxUses,
-	)
-	if err != nil {
-		h.domain(w, err)
-		return
-	}
+	token, err := h.service.CreateInvite(r.Context(), session.UserID, r.PathValue("chat_id"), time.Duration(body.TTLHours)*time.Hour, body.MaxUses)
+	if err != nil { h.domain(w, err); return }
 	writeJSON(w, http.StatusCreated, map[string]string{"token": token})
 }
 
 func (h *HTTPHandler) join(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Token string `json:"token"`
-	}
+	if !ok { return }
+	var body struct { Token string `json:"token"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
 	group, err := h.service.JoinByInvite(r.Context(), session.UserID, body.Token)
-	if err != nil {
-		h.domain(w, err)
-		return
-	}
+	if err != nil { h.domain(w, err); return }
 	writeJSON(w, http.StatusOK, group)
 }
 
 func (h *HTTPHandler) revokeInvite(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Token string `json:"token"`
-	}
+	if !ok { return }
+	var body struct { Token string `json:"token"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
 	if err := h.service.RevokeInvite(r.Context(), session.UserID, r.PathValue("chat_id"), body.Token); err != nil {
-		h.domain(w, err)
-		return
+		h.domain(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
