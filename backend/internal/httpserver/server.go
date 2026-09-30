@@ -14,6 +14,7 @@ type Server struct {
 	mux           *http.ServeMux
 	readiness     func(context.Context) error
 	allowedOrigin string
+	limiter       *RateLimiter
 }
 
 type healthResponse struct {
@@ -22,7 +23,7 @@ type healthResponse struct {
 }
 
 func New(logger *slog.Logger) *Server {
-	s := &Server{logger: logger, mux: http.NewServeMux()}
+	s := &Server{logger: logger, mux: http.NewServeMux(), limiter: NewRateLimiter()}
 	s.routes()
 	return s
 }
@@ -32,7 +33,15 @@ func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness =
 func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
 
 func (s *Server) Handler() http.Handler {
-	return recoverMiddleware(s.logger, requestIDMiddleware(securityHeaders(corsMiddleware(s.allowedOrigin, s.mux))))
+	var handler http.Handler = s.mux
+	handler = bodyLimitMiddleware(handler)
+	handler = rateLimitMiddleware(s.limiter, handler)
+	handler = corsMiddleware(s.allowedOrigin, handler)
+	handler = securityHeaders(handler)
+	handler = requestTelemetryMiddleware(s.logger, handler)
+	handler = requestIDMiddleware(handler)
+	handler = recoverMiddleware(s.logger, handler)
+	return handler
 }
 
 func (s *Server) routes() {
@@ -78,6 +87,16 @@ func corsMiddleware(allowedOrigin string, next http.Handler) http.Handler {
 	})
 }
 
+func bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Feature handlers may enforce stricter limits. This is only the outer safety ceiling.
+			r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -87,9 +106,14 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-site")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Pragma", "no-cache")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -102,6 +126,42 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("X-Request-ID", requestID)
 		next.ServeHTTP(w, r)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	if w.status == 0 { w.status = status }
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(body []byte) (int,error) {
+	if w.status == 0 { w.status = http.StatusOK }
+	n,err:=w.ResponseWriter.Write(body)
+	w.bytes += n
+	return n,err
+}
+
+func requestTelemetryMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started:=time.Now()
+		wrapped:=&statusWriter{ResponseWriter:w}
+		next.ServeHTTP(wrapped,r)
+		status:=wrapped.status
+		if status==0 { status=http.StatusOK }
+		logger.Info("http_request",
+			"method",r.Method,
+			"path",r.URL.Path,
+			"status",status,
+			"bytes",wrapped.bytes,
+			"duration_ms",time.Since(started).Milliseconds(),
+			"request_id",w.Header().Get("X-Request-ID"),
+		)
 	})
 }
 
