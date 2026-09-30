@@ -13,9 +13,7 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore { return &PostgresStore
 
 func (s *PostgresStore) List(ctx context.Context, userID, mode string, before time.Time, limit int) ([]Item, error) {
 	var beforeValue any
-	if !before.IsZero() {
-		beforeValue = before
-	}
+	if !before.IsZero() { beforeValue = before }
 	const query = `
 		WITH viewer_interests AS (
 			SELECT interest_slug FROM user_interests WHERE user_id=$1::uuid
@@ -26,8 +24,7 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 			       (SELECT count(*) FROM user_interests ai JOIN viewer_interests vi ON vi.interest_slug=ai.interest_slug WHERE ai.user_id=p.author_id) AS shared_interests,
 			       (SELECT count(*) FROM follows af WHERE af.followed_id=p.author_id) AS follower_count,
 			       EXISTS(
-				SELECT 1
-				FROM feed_feedback ff
+				SELECT 1 FROM feed_feedback ff
 				JOIN posts liked_post ON liked_post.id=ff.post_id
 				WHERE ff.user_id=$1::uuid AND ff.signal='more_like_this' AND liked_post.author_id=p.author_id
 			   ) AS positive_author_affinity
@@ -68,8 +65,7 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 			FROM post_media pm
 			JOIN media_objects m ON m.id=pm.media_id AND m.state='ready' AND m.deleted_at IS NULL
 			WHERE pm.post_id=c.id
-			ORDER BY pm.position ASC
-			LIMIT 1
+			ORDER BY pm.position ASC LIMIT 1
 		) media ON TRUE
 		WHERE ($2='for-you' OR ($2='following' AND c.is_following))
 		ORDER BY
@@ -90,26 +86,23 @@ func (s *PostgresStore) List(ctx context.Context, userID, mode string, before ti
 		var item Item
 		var mediaID, mimeType *string
 		var width, height *int
-		if err := rows.Scan(
-			&item.ID, &item.AuthorID, &item.AuthorUsername, &item.AuthorName,
-			&item.Kind, &item.Body, &item.RepliesCount, &item.ReactionsCount,
-			&item.CreatedAt, &item.Reason, &item.Score,
-			&mediaID, &mimeType, &width, &height,
-		); err != nil { return nil, err }
+		if err := rows.Scan(&item.ID,&item.AuthorID,&item.AuthorUsername,&item.AuthorName,&item.Kind,&item.Body,&item.RepliesCount,&item.ReactionsCount,&item.CreatedAt,&item.Reason,&item.Score,&mediaID,&mimeType,&width,&height); err != nil { return nil,err }
 		if mediaID != nil && mimeType != nil && width != nil && height != nil {
-			item.Cover = &MediaRef{ID:*mediaID, MimeType:*mimeType, Width:*width, Height:*height, URL:"/api/v1/media/"+*mediaID+"/content"}
+			item.Cover=&MediaRef{ID:*mediaID,MimeType:*mimeType,Width:*width,Height:*height,URL:"/api/v1/media/"+*mediaID+"/content"}
 		}
-		items = append(items, item)
+		items=append(items,item)
 	}
-	return items, rows.Err()
+	return items,rows.Err()
 }
 
 func (s *PostgresStore) SetFeedback(ctx context.Context, userID, postID, signal string) error {
-	_, err := s.pool.Exec(ctx, `
+	result,err:=s.pool.Exec(ctx,`
 		INSERT INTO feed_feedback(user_id,post_id,signal)
 		SELECT $1::uuid,p.id,$3
 		FROM posts p
 		WHERE p.id=$2::uuid AND p.deleted_at IS NULL AND p.visibility='public'
-		ON CONFLICT(user_id,post_id) DO UPDATE SET signal=EXCLUDED.signal,updated_at=now()`, userID, postID, signal)
-	return err
+		ON CONFLICT(user_id,post_id) DO UPDATE SET signal=EXCLUDED.signal,updated_at=now()`,userID,postID,signal)
+	if err!=nil{return err}
+	if result.RowsAffected()==0{return ErrInvalidFeedback}
+	return nil
 }
