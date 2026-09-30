@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS saved_posts;
+DROP TABLE IF EXISTS post_reactions;
+DROP TABLE IF EXISTS post_replies;
+DROP TABLE IF EXISTS posts;
