@@ -16,6 +16,18 @@ export type ModerationCase = {
   created_at: string;
   updated_at: string;
 };
+export type SecurityEvent = {
+  id: number;
+  event_type: string;
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  user_id?: string;
+  session_id?: string;
+  source_ip?: string;
+  subject_type: string;
+  subject_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
 
 async function call(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
@@ -47,6 +59,16 @@ export async function listModerationCases(): Promise<ModerationCase[]> {
   if (response.status === 404) throw new Error('Access denied');
   if (!response.ok) throw new Error('Не удалось загрузить очередь');
   const payload = await response.json() as { items: ModerationCase[] };
+  return payload.items;
+}
+
+export async function listSecurityEvents(severity = ''): Promise<SecurityEvent[]> {
+  const params = new URLSearchParams({ limit: '200' });
+  if (severity) params.set('severity', severity);
+  const response = await call(`/api/v1/admin/security/events?${params.toString()}`);
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить security events');
+  const payload = await response.json() as { items: SecurityEvent[] };
   return payload.items;
 }
 
