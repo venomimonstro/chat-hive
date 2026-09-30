@@ -26,6 +26,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/profiles/{username}", h.getProfile)
 	mux.HandleFunc("GET /api/v1/profiles/{username}/followers", h.followers)
 	mux.HandleFunc("GET /api/v1/profiles/{username}/following", h.following)
+	mux.HandleFunc("GET /api/v1/discovery/people", h.recommendPeople)
 	mux.HandleFunc("POST /api/v1/profiles/{username}/follow", h.follow)
 	mux.HandleFunc("DELETE /api/v1/profiles/{username}/follow", h.unfollow)
 	mux.HandleFunc("POST /api/v1/profiles/{username}/block", h.block)
@@ -34,66 +35,51 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 
 func (h *HTTPHandler) getProfile(w http.ResponseWriter, r *http.Request) {
 	viewerID, ok := h.optionalViewer(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	profile, err := h.service.GetProfile(r.Context(), viewerID, r.PathValue("username"))
-	if err != nil {
-		h.profileError(w, err)
-		return
-	}
+	if err != nil { h.profileError(w, err); return }
 	writeJSON(w, http.StatusOK, profile)
 }
 
 func (h *HTTPHandler) followers(w http.ResponseWriter, r *http.Request) {
 	viewerID, ok := h.optionalViewer(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	items, err := h.service.ListFollowers(r.Context(), viewerID, r.PathValue("username"), limit)
-	if err != nil {
-		h.profileError(w, err)
-		return
-	}
+	if err != nil { h.profileError(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *HTTPHandler) following(w http.ResponseWriter, r *http.Request) {
 	viewerID, ok := h.optionalViewer(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	items, err := h.service.ListFollowing(r.Context(), viewerID, r.PathValue("username"), limit)
-	if err != nil {
-		h.profileError(w, err)
-		return
-	}
+	if err != nil { h.profileError(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (h *HTTPHandler) follow(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Follow)
+func (h *HTTPHandler) recommendPeople(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.authenticate(w,r)
+	if !ok { return }
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	items, err := h.service.RecommendPeople(r.Context(), session.UserID, limit)
+	if err != nil {
+		h.logger.Error("people recommendations failed", "error", err, "user_id", session.UserID)
+		writeError(w,http.StatusServiceUnavailable,"temporarily_unavailable","Try again later")
+		return
+	}
+	writeJSON(w,http.StatusOK,map[string]any{"items":items})
 }
 
-func (h *HTTPHandler) unfollow(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Unfollow)
-}
-
-func (h *HTTPHandler) block(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Block)
-}
-
-func (h *HTTPHandler) unblock(w http.ResponseWriter, r *http.Request) {
-	h.mutate(w, r, h.service.Unblock)
-}
+func (h *HTTPHandler) follow(w http.ResponseWriter, r *http.Request) { h.mutate(w, r, h.service.Follow) }
+func (h *HTTPHandler) unfollow(w http.ResponseWriter, r *http.Request) { h.mutate(w, r, h.service.Unfollow) }
+func (h *HTTPHandler) block(w http.ResponseWriter, r *http.Request) { h.mutate(w, r, h.service.Block) }
+func (h *HTTPHandler) unblock(w http.ResponseWriter, r *http.Request) { h.mutate(w, r, h.service.Unblock) }
 
 func (h *HTTPHandler) mutate(w http.ResponseWriter, r *http.Request, action func(context.Context, string, string) error) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	err := action(r.Context(), session.UserID, r.PathValue("username"))
 	switch {
 	case err == nil:
@@ -109,13 +95,9 @@ func (h *HTTPHandler) mutate(w http.ResponseWriter, r *http.Request, action func
 }
 
 func (h *HTTPHandler) optionalViewer(w http.ResponseWriter, r *http.Request) (string, bool) {
-	if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
-		return "", true
-	}
+	if strings.TrimSpace(r.Header.Get("Authorization")) == "" { return "", true }
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return "", false
-	}
+	if !ok { return "", false }
 	return session.UserID, true
 }
 
