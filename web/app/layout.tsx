@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { PWARegister } from '../components/PWARegister';
 import './globals.css';
 import './auth.css';
 import './onboarding.css';
@@ -15,7 +16,9 @@ import './channel.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Найди своих',
-  description: 'Быстрый социальный мессенджер для общения и поиска людей по интересам.'
+  description: 'Быстрый социальный мессенджер для общения и поиска людей по интересам.',
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icon.svg', apple: '/icon.svg' }
 };
 
 export const viewport: Viewport = {
@@ -31,7 +34,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body>
+        <PWARegister />
+        {children}
+      </body>
     </html>
   );
 }
