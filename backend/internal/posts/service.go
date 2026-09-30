@@ -14,20 +14,29 @@ var (
 	ErrForbidden   = errors.New("forbidden")
 )
 
+type MediaRef struct {
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	URL      string `json:"url"`
+}
+
 type Post struct {
-	ID             string    `json:"id"`
-	AuthorID       string    `json:"author_id"`
-	AuthorUsername string    `json:"author_username"`
-	AuthorName     string    `json:"author_name"`
-	Kind           string    `json:"kind"`
-	Body           string    `json:"body"`
-	Visibility     string    `json:"visibility"`
-	RepliesCount   int64     `json:"replies_count"`
-	ReactionsCount int64     `json:"reactions_count"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Mine           bool      `json:"mine"`
-	Saved          bool      `json:"saved"`
+	ID             string     `json:"id"`
+	AuthorID       string     `json:"author_id"`
+	AuthorUsername string     `json:"author_username"`
+	AuthorName     string     `json:"author_name"`
+	Kind           string     `json:"kind"`
+	Body           string     `json:"body"`
+	Visibility     string     `json:"visibility"`
+	Media          []MediaRef `json:"media"`
+	RepliesCount   int64      `json:"replies_count"`
+	ReactionsCount int64      `json:"reactions_count"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	Mine           bool       `json:"mine"`
+	Saved          bool       `json:"saved"`
 }
 
 type Reply struct {
@@ -46,6 +55,7 @@ type CreateInput struct {
 	Kind       string
 	Body       string
 	Visibility string
+	MediaIDs   []string
 }
 
 type Store interface {
@@ -72,11 +82,34 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Post, error) {
 	if input.Visibility == "" {
 		input.Visibility = "public"
 	}
-	if input.AuthorID == "" || !validKind(input.Kind) || !validVisibility(input.Visibility) || !validBody(input.Kind, input.Body) {
+	if input.AuthorID == "" || !validKind(input.Kind) || !validVisibility(input.Visibility) || !validBody(input.Kind, input.Body, len(input.MediaIDs)) {
+		return Post{}, ErrInvalidPost
+	}
+	if len(input.MediaIDs) > 10 {
+		return Post{}, ErrInvalidPost
+	}
+	seen := make(map[string]struct{}, len(input.MediaIDs))
+	cleanMedia := make([]string, 0, len(input.MediaIDs))
+	for _, id := range input.MediaIDs {
+		id = strings.TrimSpace(id)
+		if !looksLikeUUID(id) {
+			return Post{}, ErrInvalidPost
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		cleanMedia = append(cleanMedia, id)
+	}
+	input.MediaIDs = cleanMedia
+	if input.Kind == "photo" && len(input.MediaIDs) == 0 {
 		return Post{}, ErrInvalidPost
 	}
 	post, err := s.store.Create(ctx, input)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) || errors.Is(err, ErrNotFound) {
+			return Post{}, err
+		}
 		return Post{}, fmt.Errorf("create post: %w", err)
 	}
 	return post, nil
@@ -169,18 +202,15 @@ func validVisibility(value string) bool {
 	return value == "public" || value == "followers"
 }
 
-func validBody(kind, body string) bool {
+func validBody(kind, body string, mediaCount int) bool {
 	length := len([]rune(body))
-	if length < 1 {
-		return false
-	}
 	switch kind {
 	case "thought":
-		return length <= 700
+		return mediaCount == 0 && length >= 1 && length <= 700
 	case "photo":
-		return length <= 2000
+		return mediaCount > 0 && length <= 2000
 	case "post":
-		return length <= 8000
+		return length >= 1 && length <= 8000
 	default:
 		return false
 	}
