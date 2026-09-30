@@ -20,7 +20,7 @@ Permanent product constraints:
 ## Architecture decision
 
 - Backend: Go modular monolith.
-- Realtime: WebSocket gateway, initially deployable with the API but separated by package/process boundaries.
+- Realtime: WebSocket gateway; durable state remains PostgreSQL-backed and REST sync remains a recovery path.
 - Frontend: Next.js + TypeScript, mobile-first PWA.
 - Source of truth: PostgreSQL.
 - Ephemeral/cache/presence: Redis.
@@ -39,14 +39,14 @@ Development currently proceeds directly in `main` at owner request. GitHub Actio
 | 00 | Product/architecture/security source of truth | DONE |
 | 01 | Repository, local infrastructure, backend/frontend skeleton | DONE |
 | 02 | Design system and responsive application shell | DONE |
-| 03 | Identity: email magic-link, session rotation/revocation, Yandex ID foundation, passkeys | IN PROGRESS |
-| 04 | Onboarding: username, profile, interests, initial discovery seed | IN PROGRESS |
-| 05 | Profiles and social graph | PLANNED |
+| 03 | Identity: email magic-link, session rotation/revocation, Yandex ID, SMTP, passkeys | IN PROGRESS |
+| 04 | Onboarding: username, profile, interests | DONE |
+| 05 | Profiles and social graph | IN PROGRESS |
 | 06 | Realtime gateway | PLANNED |
-| 07 | Direct messaging core | PLANNED |
-| 08 | Reliable messaging/offline outbox/idempotency | PLANNED |
+| 07 | Direct messaging core | IN PROGRESS |
+| 08 | Reliable messaging/offline outbox/idempotency | IN PROGRESS |
 | 09 | Image/media pipeline | PLANNED |
-| 10 | Groups | PLANNED |
+| 10 | Groups | IN PROGRESS |
 | 11 | Posts: thought/photo/post | PLANNED |
 | 12 | Feed | PLANNED |
 | 13 | Discovery | PLANNED |
@@ -58,8 +58,8 @@ Development currently proceeds directly in `main` at owner request. GitHub Actio
 | 19 | Moderation core | PLANNED |
 | 20 | Admin console | PLANNED |
 | 21 | Security plane/detection | PLANNED |
-| 22 | Trust center | PLANNED |
-| 23 | Offline + low-data modes | PLANNED |
+| 22 | Trust center | IN PROGRESS |
+| 23 | Offline + low-data modes | IN PROGRESS |
 | 24 | Public web + invitation growth loops | PLANNED |
 | 25 | Performance/load profiling | PLANNED |
 | 26 | Security hardening + independent pentest gate | PLANNED |
@@ -70,27 +70,42 @@ Development currently proceeds directly in `main` at owner request. GitHub Actio
 
 ## Implemented foundation
 
-The repository now contains the architecture/security/data/API rules, local PostgreSQL/Redis/NATS stack, Go API, mobile-first Next.js shell and reusable design system. Identity currently includes persistent email magic links, hashed one-time challenges, short-lived access credentials, HttpOnly refresh credentials, server-side session validation/revocation, refresh rotation and replay detection. The web client includes login, magic-link callback, automatic refresh and session-aware API access.
+The repository contains architecture/security/data/API rules, local PostgreSQL/Redis/NATS infrastructure, Go API, Next.js mobile-first shell and reusable design system.
 
-Sprint 04 now includes persistent interests, profile onboarding schema/API and a mobile-first onboarding screen with username, display name, bio and 3–12 interest selection.
+Identity currently includes persistent email magic links, hashed one-time challenges, short-lived access credentials, HttpOnly refresh credentials, server-side validation/revocation, refresh rotation with replay detection, Yandex ID Authorization Code + PKCE flow, production SMTP/STARTTLS transport and active-device/session listing. Yandex access tokens are not persisted in the browser or CHAT database.
+
+Onboarding includes username, display name, bio, persistent interests and atomic completion. Social Graph includes public profile lookup, follow/unfollow and block/unblock with server-side authorization semantics.
+
+Messaging now uses PostgreSQL as durable source of truth. Direct chat creation is unique per user pair, blocked users cannot exchange messages, each chat has an ordered sequence, client_message_id provides retry idempotency, message history is cursor-based and read position is server-side. The Next.js messenger has responsive desktop/mobile layout, optimistic sending and a browser-persisted outbox that reuses client_message_id after reconnect/reload.
+
+Groups reuse the same chat/message model. The schema supports owner/admin/member roles and hashed limited/expiring invite tokens. Group service/store/API foundation implements create, membership listing, role changes, removal, leave, invite/join/revoke flows with transactional permission checks.
+
+Important schema correction: migration 000007 is a self-contained messaging + groups migration and creates chats, chat_members, direct_chat_pairs, messages, reactions and group_invites in dependency-safe order.
 
 ## Sprint 03 remaining
 
-- Yandex ID OAuth adapter and connection flow.
 - Passkey/WebAuthn credential storage and endpoint foundation.
-- Production mail transport abstraction implementation.
-- Session/device list endpoint for Trust Center reuse.
+- Consolidate repeated Bearer authentication parsing behind one shared authenticated HTTP boundary.
+- Add security/audit events for login/session-sensitive operations.
 
-## Sprint 04 acceptance criteria
+## Sprint 05 remaining
 
-- New account can complete onboarding after first login.
-- Username validation and case-insensitive uniqueness are enforced server-side.
-- Display name and bio limits are server-side enforced.
-- User chooses 3–12 active interests.
-- Profile and interests are stored atomically.
-- Completed onboarding can be detected through `/api/v1/me/profile`.
-- Mobile onboarding UI handles loading, validation, conflict and error states.
-- Onboarding data is ready to seed discovery without introducing ML dependency.
+- Followers/following list endpoints and screens.
+- Profile edit screen after onboarding.
+- Mutual/friend relationship semantics after product review.
+
+## Sprint 07–08 remaining
+
+- Message edit/delete/reply/reactions API and UI.
+- Older-history pagination UI.
+- Replace temporary polling with realtime transport while retaining REST recovery sync.
+- Move production-grade offline queue from simple localStorage foundation to IndexedDB with bounded retention and migration/versioning.
+
+## Sprint 10 remaining
+
+- Group UI: creation, details, member list, role management and invite sharing.
+- Owner-transfer flow before owner can leave.
+- Group-level moderation controls and rate limits.
 
 ## Definition of Done for every feature sprint
 
@@ -104,7 +119,7 @@ A feature is not DONE until all applicable items are satisfied:
 - State-changing operations are idempotent where retries are possible.
 - Audit/security events are emitted where required.
 - Unit/integration/regression tests cover the critical path.
-- Migrations exist for schema changes.
+- Migrations exist for schema changes and are dependency-safe from a clean database.
 - Documentation and this sprint table are updated.
 - No known Critical/High exploitable security issue is introduced.
 
@@ -123,4 +138,4 @@ Before implementing a sprint, an AI agent must:
 
 ## Current next action
 
-Finish remaining Sprint 03 external identity/security pieces while continuing Sprint 04, then start Sprint 05 profiles/social graph directly in `main`.
+Finish Sprint 10 group UI and permission edge cases, then complete direct-message actions and history pagination. After the durable messaging surface is complete, add realtime transport as an acceleration layer rather than as the source of truth.
