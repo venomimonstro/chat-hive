@@ -26,6 +26,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/me", h.me)
 	mux.HandleFunc("GET /api/v1/admin/moderation/cases", h.listCases)
 	mux.HandleFunc("POST /api/v1/admin/moderation/cases/{case_id}/decision", h.decideCase)
+	mux.HandleFunc("GET /api/v1/admin/security/events", h.listSecurityEvents)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,17 @@ func (h *HTTPHandler) listCases(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.ListCases(r.Context(), principal, limit)
 	if err != nil { h.domain(w, err); return }
 	h.audit(r, principal, "moderation_queue_view", "moderation_queue", "", "")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) listSecurityEvents(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "owner")
+	if !ok { return }
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	severity := strings.TrimSpace(r.URL.Query().Get("severity"))
+	items, err := h.service.ListSecurityEvents(r.Context(), principal, severity, limit)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "security_event_queue_view", "security_events", "", severity)
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
