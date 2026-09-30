@@ -38,9 +38,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 
 func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 	var body struct {
 		Kind       string   `json:"kind"`
 		Body       string   `json:"body"`
@@ -51,115 +49,67 @@ func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
-	post, err := h.service.Create(r.Context(), CreateInput{
-		AuthorID: session.UserID, Kind: body.Kind, Body: body.Body, Visibility: body.Visibility, MediaIDs: body.MediaIDs,
-	})
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	post, err := h.service.Create(r.Context(), CreateInput{AuthorID: session.UserID, Kind: body.Kind, Body: body.Body, Visibility: body.Visibility, MediaIDs: body.MediaIDs})
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusCreated, post)
 }
 
 func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	post, err := h.service.Get(r.Context(), session.UserID, r.PathValue("post_id"))
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok { return }
+	post, err := h.service.Get(r.Context(), viewerID, r.PathValue("post_id"))
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusOK, post)
 }
 
 func (h *HTTPHandler) listByAuthor(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok { return }
 	var before time.Time
 	if raw := strings.TrimSpace(r.URL.Query().Get("before")); raw != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, raw)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor")
-			return
-		}
+		if err != nil { writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor"); return }
 		before = parsed
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, err := h.service.ListByAuthor(r.Context(), session.UserID, r.PathValue("username"), before, limit)
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	items, err := h.service.ListByAuthor(r.Context(), viewerID, r.PathValue("username"), before, limit)
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *HTTPHandler) edit(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Body string `json:"body"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
-		return
-	}
+	if !ok { return }
+	var body struct { Body string `json:"body"` }
+	if err := decodeJSON(w, r, &body); err != nil { writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request"); return }
 	post, err := h.service.Edit(r.Context(), session.UserID, r.PathValue("post_id"), body.Body)
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusOK, post)
 }
 
 func (h *HTTPHandler) delete(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if err := h.service.Delete(r.Context(), session.UserID, r.PathValue("post_id")); err != nil {
-		h.domainError(w, err)
-		return
-	}
+	if !ok { return }
+	if err := h.service.Delete(r.Context(), session.UserID, r.PathValue("post_id")); err != nil { h.domainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) addReply(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Body string `json:"body"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
-		return
-	}
+	if !ok { return }
+	var body struct { Body string `json:"body"` }
+	if err := decodeJSON(w, r, &body); err != nil { writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request"); return }
 	reply, err := h.service.AddReply(r.Context(), session.UserID, r.PathValue("post_id"), body.Body)
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusCreated, reply)
 }
 
 func (h *HTTPHandler) listReplies(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	viewerID, ok := h.optionalViewer(w, r)
+	if !ok { return }
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, err := h.service.ListReplies(r.Context(), session.UserID, r.PathValue("post_id"), limit)
-	if err != nil {
-		h.domainError(w, err)
-		return
-	}
+	items, err := h.service.ListReplies(r.Context(), viewerID, r.PathValue("post_id"), limit)
+	if err != nil { h.domainError(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -168,13 +118,8 @@ func (h *HTTPHandler) removeReaction(w http.ResponseWriter, r *http.Request) { h
 
 func (h *HTTPHandler) setReaction(w http.ResponseWriter, r *http.Request, enabled bool) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if err := h.service.SetReaction(r.Context(), session.UserID, r.PathValue("post_id"), r.PathValue("reaction"), enabled); err != nil {
-		h.domainError(w, err)
-		return
-	}
+	if !ok { return }
+	if err := h.service.SetReaction(r.Context(), session.UserID, r.PathValue("post_id"), r.PathValue("reaction"), enabled); err != nil { h.domainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -183,14 +128,16 @@ func (h *HTTPHandler) unsave(w http.ResponseWriter, r *http.Request) { h.setSave
 
 func (h *HTTPHandler) setSaved(w http.ResponseWriter, r *http.Request, saved bool) {
 	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if err := h.service.SetSaved(r.Context(), session.UserID, r.PathValue("post_id"), saved); err != nil {
-		h.domainError(w, err)
-		return
-	}
+	if !ok { return }
+	if err := h.service.SetSaved(r.Context(), session.UserID, r.PathValue("post_id"), saved); err != nil { h.domainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) optionalViewer(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if strings.TrimSpace(r.Header.Get("Authorization")) == "" { return "", true }
+	session, ok := h.authenticate(w, r)
+	if !ok { return "", false }
+	return session.UserID, true
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
