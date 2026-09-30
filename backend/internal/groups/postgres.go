@@ -58,6 +58,31 @@ func (s *PostgresStore) SetMemberRole(ctx context.Context,actorID,chatID,targetU
 	return tx.Commit(ctx)
 }
 
+func (s *PostgresStore) TransferOwnership(ctx context.Context, actorID, chatID, targetUsername string) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil { return err }
+	defer func(){ _ = tx.Rollback(ctx) }()
+
+	var actorRole string
+	if err := tx.QueryRow(ctx, `SELECT role FROM chat_members WHERE chat_id=$1::uuid AND user_id=$2::uuid AND left_at IS NULL FOR UPDATE`, chatID, actorID).Scan(&actorRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { return ErrForbidden }
+		return err
+	}
+	if actorRole != "owner" { return ErrForbidden }
+
+	var targetID, targetRole string
+	if err := tx.QueryRow(ctx, `SELECT cm.user_id::text,cm.role FROM chat_members cm JOIN profiles p ON p.user_id=cm.user_id WHERE cm.chat_id=$1::uuid AND lower(p.username)=lower($2) AND cm.left_at IS NULL FOR UPDATE`, chatID, targetUsername).Scan(&targetID,&targetRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { return ErrNotFound }
+		return err
+	}
+	if targetID == actorID || targetRole == "owner" { return ErrForbidden }
+
+	if _, err := tx.Exec(ctx, `UPDATE chat_members SET role='member' WHERE chat_id=$1::uuid AND user_id=$2::uuid`, chatID, actorID); err != nil { return err }
+	if _, err := tx.Exec(ctx, `UPDATE chat_members SET role='owner' WHERE chat_id=$1::uuid AND user_id=$2::uuid`, chatID, targetID); err != nil { return err }
+	if _, err := tx.Exec(ctx, `UPDATE chats SET created_by=$2::uuid,updated_at=now() WHERE id=$1::uuid`, chatID, targetID); err != nil { return err }
+	return tx.Commit(ctx)
+}
+
 func (s *PostgresStore) RemoveMember(ctx context.Context,actorID,chatID,targetUsername string) error{
 	tx,err:=s.pool.BeginTx(ctx,pgx.TxOptions{});if err!=nil{return err};defer func(){_=tx.Rollback(ctx)}()
 	var actorRole,targetRole,targetID string
