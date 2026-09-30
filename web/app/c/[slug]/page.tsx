@@ -1,70 +1,42 @@
-'use client';
+import type { Metadata } from 'next';
+import { CommunityClient } from './CommunityClient';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { AppShell } from '../../../components/AppShell';
-import { Button, Surface } from '../../../components/ui';
-import { getAccessToken } from '../../../lib/api';
-import { Community, getCommunity, joinCommunity, leaveCommunity } from '../../../lib/communities';
+const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
-export default function CommunityPage() {
-  const params = useParams<{ slug: string }>();
-  const router = useRouter();
-  const slug = params.slug;
-  const [community, setCommunity] = useState<Community | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+type PublicCommunity = { slug: string; title: string; description: string; members_count: number };
 
-  function requireLogin() {
-    router.push(`/login?next=${encodeURIComponent(`/c/${slug}`)}`);
+async function getPublicCommunity(slug: string): Promise<PublicCommunity | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/communities/${encodeURIComponent(slug)}`, {
+      headers: { Accept: 'application/json' }, cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    return response.json() as Promise<PublicCommunity>;
+  } catch {
+    return null;
   }
+}
 
-  async function load() {
-    setError('');
-    try { setCommunity(await getCommunity(slug)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Сообщество недоступно'); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, [slug]);
+function summary(value: string, fallback: string) {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (!compact) return fallback;
+  return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact;
+}
 
-  async function join() {
-    if (busy) return;
-    if (!getAccessToken()) { requireLogin(); return; }
-    setBusy(true); setError('');
-    try { setCommunity(await joinCommunity(slug)); }
-    catch (err) {
-      if (err instanceof Error && err.message === 'Authentication required') { requireLogin(); return; }
-      setError(err instanceof Error ? err.message : 'Не удалось вступить');
-    } finally { setBusy(false); }
-  }
-  async function leave() {
-    if (busy) return; setBusy(true); setError('');
-    try { await leaveCommunity(slug); router.replace('/communities'); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Не удалось выйти'); }
-    finally { setBusy(false); }
-  }
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const community = await getPublicCommunity(slug);
+  if (!community) return { title: 'Сообщество — CHAT', robots: { index: false, follow: false } };
+  const description = summary(community.description, `${community.title} · ${community.members_count} участников в CHAT`);
+  return {
+    title: `${community.title} (@${community.slug}) — CHAT`,
+    description,
+    openGraph: { type: 'website', title: `${community.title} — CHAT`, description },
+    twitter: { card: 'summary', title: `${community.title} — CHAT`, description }
+  };
+}
 
-  return (
-    <AppShell active="Открыть">
-      <header className="screenHeader"><div><span className="eyebrow">СООБЩЕСТВО</span><h1>{community?.title ?? 'Сообщество'}</h1></div><a href="/communities">←</a></header>
-      <main className="communityPage">
-        {loading ? <p className="chatListState">Загружаем…</p> : null}
-        {error ? <p className="messengerError" role="alert">{error}</p> : null}
-        {community ? <Surface className="communityHero">
-          <div className="communityHeroMark">#</div>
-          <h2>{community.title}</h2><span>@{community.slug}</span>
-          <p>{community.description || 'Без описания'}</p>
-          <div className="communityStats"><strong>{community.members_count}</strong><span>участников</span></div>
-          {community.visibility === 'public' && community.moderation_status === 'pending' ? <div className="communityPending">Публичное размещение ожидает модерации. Пока страницу видят только участники.</div> : null}
-          {community.moderation_status === 'rejected' ? <div className="communityPending isRejected">Публичное размещение не одобрено. Сообщество остаётся доступно владельцу и участникам.</div> : null}
-          <div className="communityActions">
-            {community.role ? <a className="uiButton uiButton--primary" href={`/?chat=${encodeURIComponent(community.chat_id)}`}>Открыть чат</a> : <Button onClick={join} disabled={busy}>Вступить</Button>}
-            {community.role && community.role !== 'owner' ? <Button variant="secondary" onClick={leave} disabled={busy}>Выйти</Button> : null}
-            <a className="uiButton uiButton--ghost" href={`/report?type=group&id=${encodeURIComponent(community.chat_id)}`}>Пожаловаться</a>
-          </div>
-        </Surface> : null}
-      </main>
-    </AppShell>
-  );
+export default async function CommunityPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return <CommunityClient slug={slug} />;
 }
