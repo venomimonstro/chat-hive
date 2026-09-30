@@ -7,11 +7,13 @@ import {
   ChatMessage, ChatSummary, ensureDirectChat, getCurrentSession, listChats, listMessages,
   markChatRead, sendTextMessage
 } from '../lib/api';
+import { deleteChatMessage, editChatMessage } from '../lib/messageActions';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
-type OutboxItem = { chat_id: string; client_message_id: string; body: string; created_at: string };
+type OutboxItem = { chat_id: string; client_message_id: string; body: string; created_at: string; reply_to_id?: string };
 
 const OUTBOX_KEY = 'chat_outbox_v1';
+const PAGE_SIZE = 50;
 
 function chatName(chat: ChatSummary) {
   return chat.kind === 'direct' ? (chat.peer_display_name || chat.peer_username || 'Диалог') : (chat.title || 'Группа');
@@ -56,16 +58,23 @@ export function ChatsClient() {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [messageLoading, setMessageLoading] = useState(false);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
   const [search, setSearch] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<LocalMessage | null>(null);
+  const [editing, setEditing] = useState<LocalMessage | null>(null);
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
 
   function chooseChat(chat: ChatSummary | null) {
     setSelected(chat);
+    setReplyingTo(null);
+    setEditing(null);
+    setDraft('');
     replaceChatQuery(chat?.chat_id);
   }
 
@@ -90,7 +99,7 @@ export function ChatsClient() {
       const remaining: OutboxItem[] = [];
       for (const item of items) {
         try {
-          const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id);
+          const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
           if (selectedIdRef.current === item.chat_id) {
             setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
           }
@@ -139,14 +148,16 @@ export function ChatsClient() {
     selectedIdRef.current = selected?.chat_id ?? '';
     if (!selected) {
       setMessages([]);
+      setHasOlder(false);
       return;
     }
     let active = true;
     setMessageLoading(true);
-    listMessages(selected.chat_id)
+    listMessages(selected.chat_id, undefined, PAGE_SIZE)
       .then(async (items) => {
         if (!active) return;
         const ordered = [...items].reverse();
+        setHasOlder(items.length === PAGE_SIZE);
         const pending = loadOutbox().filter((item) => item.chat_id === selected.chat_id).map<LocalMessage>((item) => ({
           id: `local-${item.client_message_id}`,
           chat_id: item.chat_id,
@@ -155,6 +166,7 @@ export function ChatsClient() {
           sequence: Number.MAX_SAFE_INTEGER,
           type: 'text',
           body: item.body,
+          reply_to_id: item.reply_to_id,
           created_at: item.created_at,
           local_status: navigator.onLine ? 'sending' : 'failed'
         }));
@@ -169,12 +181,13 @@ export function ChatsClient() {
     const timer = window.setInterval(async () => {
       if (!active) return;
       try {
-        const items = await listMessages(selected.chat_id);
+        const items = await listMessages(selected.chat_id, undefined, PAGE_SIZE);
         const ordered = [...items].reverse();
         setMessages((current) => {
+          const older = current.filter((item) => item.sequence < (ordered[0]?.sequence ?? Number.MAX_SAFE_INTEGER) && !item.local_status);
           const pending = current.filter((item) => item.local_status === 'sending' || item.local_status === 'failed');
           const serverIDs = new Set(ordered.map((item) => item.client_message_id));
-          return [...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
+          return [...older, ...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
         });
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
@@ -195,6 +208,25 @@ export function ChatsClient() {
     return chats.filter((chat) => `${chatName(chat)} ${chat.peer_username ?? ''}`.toLowerCase().includes(needle));
   }, [chats, search]);
 
+  const messageByID = useMemo(() => new Map(messages.filter((item) => !item.local_status).map((item) => [item.id, item])), [messages]);
+
+  async function loadOlder() {
+    if (!selected || olderLoading || !hasOlder) return;
+    const first = messages.find((item) => Number.isFinite(item.sequence) && item.sequence < Number.MAX_SAFE_INTEGER);
+    if (!first) return;
+    setOlderLoading(true);
+    try {
+      const items = await listMessages(selected.chat_id, first.sequence, PAGE_SIZE);
+      const ordered = [...items].reverse();
+      setMessages((current) => [...ordered, ...current]);
+      setHasOlder(items.length === PAGE_SIZE);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
+    } finally {
+      setOlderLoading(false);
+    }
+  }
+
   async function createChat(event: FormEvent) {
     event.preventDefault();
     const username = newUsername.trim().replace(/^@/, '');
@@ -214,7 +246,7 @@ export function ChatsClient() {
   async function deliver(item: OutboxItem) {
     setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'sending' } : message));
     try {
-      const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id);
+      const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
       const remaining = loadOutbox().filter((queued) => queued.client_message_id !== item.client_message_id);
       saveOutbox(remaining);
       setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
@@ -229,14 +261,29 @@ export function ChatsClient() {
     if (!selected) return;
     const text = draft.trim();
     if (!text) return;
+
+    if (editing) {
+      try {
+        const updated = await editChatMessage(editing.id, text);
+        setMessages((current) => current.map((item) => item.id === updated.id ? updated : item));
+        setDraft('');
+        setEditing(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Не удалось изменить сообщение');
+      }
+      return;
+    }
+
     const item: OutboxItem = {
       chat_id: selected.chat_id,
       client_message_id: crypto.randomUUID(),
       body: text,
+      reply_to_id: replyingTo?.id,
       created_at: new Date().toISOString()
     };
     saveOutbox([...loadOutbox(), item]);
     setDraft('');
+    setReplyingTo(null);
     setMessages((current) => [...current, {
       id: `local-${item.client_message_id}`,
       chat_id: item.chat_id,
@@ -245,6 +292,7 @@ export function ChatsClient() {
       sequence: Number.MAX_SAFE_INTEGER,
       type: 'text',
       body: item.body,
+      reply_to_id: item.reply_to_id,
       created_at: item.created_at,
       local_status: navigator.onLine ? 'sending' : 'failed'
     }]);
@@ -254,6 +302,40 @@ export function ChatsClient() {
   function retry(message: LocalMessage) {
     const item = loadOutbox().find((queued) => queued.client_message_id === message.client_message_id);
     if (item) void deliver(item);
+  }
+
+  function beginReply(message: LocalMessage) {
+    if (message.local_status || message.deleted_at) return;
+    setEditing(null);
+    setReplyingTo(message);
+  }
+
+  function beginEdit(message: LocalMessage) {
+    if (message.local_status || message.deleted_at || message.sender_id !== userId) return;
+    setReplyingTo(null);
+    setEditing(message);
+    setDraft(message.body);
+  }
+
+  async function removeMessage(message: LocalMessage) {
+    if (message.local_status || message.sender_id !== userId) return;
+    try {
+      await deleteChatMessage(message.id);
+      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: '', deleted_at: new Date().toISOString() } : item));
+      if (editing?.id === message.id) {
+        setEditing(null);
+        setDraft('');
+      }
+      if (replyingTo?.id === message.id) setReplyingTo(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить сообщение');
+    }
+  }
+
+  function cancelComposerContext() {
+    setReplyingTo(null);
+    setEditing(null);
+    setDraft('');
   }
 
   return (
@@ -301,23 +383,44 @@ export function ChatsClient() {
                 {selected.kind === 'group' ? <a className="conversationSettings" href={`/groups/${selected.chat_id}`} aria-label="Настройки группы">•••</a> : null}
               </header>
               <div className="messageList" aria-live="polite">
+                {hasOlder ? <button className="loadOlderButton" type="button" onClick={loadOlder} disabled={olderLoading}>{olderLoading ? 'Загружаем…' : 'Показать предыдущие сообщения'}</button> : null}
                 {messageLoading ? <div className="chatListState">Загружаем историю…</div> : null}
                 {messages.map((message) => {
                   const mine = message.sender_id === userId;
+                  const replied = message.reply_to_id ? messageByID.get(message.reply_to_id) : undefined;
                   return (
                     <div className={`messageRow ${mine ? 'isMine' : ''}`} key={message.client_message_id}>
                       <div className={`messageBubble ${message.local_status === 'failed' ? 'isFailed' : ''}`}>
-                        <p>{message.deleted_at ? 'Сообщение удалено' : message.body}</p>
-                        <div className="messageMeta"><time>{formatTime(message.created_at)}</time>{message.local_status === 'sending' ? <span>отправляем…</span> : null}{message.local_status === 'failed' ? <button type="button" onClick={() => retry(message)}>повторить</button> : null}</div>
+                        {replied ? <button className="messageReplyPreview" type="button" onClick={() => document.getElementById(`message-${replied.id}`)?.scrollIntoView({ block: 'center' })}>{replied.body || 'Сообщение удалено'}</button> : null}
+                        <p id={`message-${message.id}`}>{message.deleted_at ? 'Сообщение удалено' : message.body}</p>
+                        <div className="messageMeta">
+                          <time>{formatTime(message.created_at)}</time>
+                          {message.edited_at ? <span>изменено</span> : null}
+                          {message.local_status === 'sending' ? <span>отправляем…</span> : null}
+                          {message.local_status === 'failed' ? <button type="button" onClick={() => retry(message)}>повторить</button> : null}
+                        </div>
+                        {!message.local_status && !message.deleted_at ? (
+                          <div className="messageActions">
+                            <button type="button" onClick={() => beginReply(message)}>Ответить</button>
+                            {mine ? <button type="button" onClick={() => beginEdit(message)}>Изменить</button> : null}
+                            {mine ? <button type="button" className="danger" onClick={() => void removeMessage(message)}>Удалить</button> : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
                 })}
               </div>
+              {(replyingTo || editing) ? (
+                <div className="composerContext">
+                  <div><strong>{editing ? 'Редактирование' : 'Ответ'}</strong><span>{editing ? editing.body : replyingTo?.body}</span></div>
+                  <button type="button" onClick={cancelComposerContext} aria-label="Отменить">✕</button>
+                </div>
+              ) : null}
               <form className="messageComposer" onSubmit={send}>
                 <button type="button" aria-label="Добавить вложение" disabled>＋</button>
-                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={4096} placeholder="Сообщение" aria-label="Сообщение" onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
-                <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label="Отправить">↑</button>
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={4096} placeholder={editing ? 'Изменить сообщение' : 'Сообщение'} aria-label="Сообщение" onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+                <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label={editing ? 'Сохранить' : 'Отправить'}>{editing ? '✓' : '↑'}</button>
               </form>
             </>
           )}
