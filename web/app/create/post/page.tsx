@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '../../../components/AppShell';
 import { Button } from '../../../components/ui';
@@ -9,7 +9,6 @@ import { MediaObject, uploadImage } from '../../../lib/media';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 type PostKind = 'thought' | 'photo' | 'post';
-
 type SelectedMedia = { object: MediaObject; preview: string };
 
 function limitFor(kind: PostKind) {
@@ -31,10 +30,6 @@ export default function CreatePostPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const limit = useMemo(() => limitFor(kind), [kind]);
-
-  useEffect(() => () => {
-    for (const item of media) URL.revokeObjectURL(item.preview);
-  }, [media]);
 
   function changeKind(next: PostKind) {
     if (next === 'thought' && media.length) {
@@ -133,7 +128,6 @@ export default function CreatePostPage() {
           <button type="button" className={kind === 'photo' ? 'isActive' : ''} onClick={() => changeKind('photo')}>Фото</button>
           <button type="button" className={kind === 'post' ? 'isActive' : ''} onClick={() => changeKind('post')}>Пост</button>
         </div>
-
         {kind === 'photo' ? (
           <div className="photoComposer">
             <label className="photoPicker">
@@ -141,39 +135,19 @@ export default function CreatePostPage() {
               <span>{uploading ? 'Загружаем…' : media.length ? 'Добавить ещё' : 'Выбрать фото'}</span>
               <small>JPEG/PNG · до 8 МБ · максимум 10</small>
             </label>
-            {media.length ? (
-              <div className="photoPreviewGrid">
-                {media.map((item) => (
-                  <div className="photoPreview" key={item.object.id}>
-                    <img src={item.preview} alt="Предпросмотр" />
-                    <button type="button" onClick={() => removeImage(item.object.id)} aria-label="Удалить изображение">✕</button>
-                  </div>
-                ))}
+            {media.length ? <div className="photoPreviewGrid">{media.map((item) => (
+              <div className="photoPreview" key={item.object.id}>
+                <img src={item.preview} alt="Предпросмотр" />
+                <button type="button" onClick={() => removeImage(item.object.id)} aria-label="Удалить изображение">✕</button>
               </div>
-            ) : null}
+            ))}</div> : null}
           </div>
         ) : null}
-
-        <textarea
-          autoFocus={kind !== 'photo'}
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          maxLength={limit}
-          placeholder={kind === 'thought' ? 'Что думаете?' : kind === 'photo' ? 'Добавьте подпись…' : 'Расскажите подробнее…'}
-          aria-label="Текст публикации"
-        />
+        <textarea autoFocus={kind !== 'photo'} value={body} onChange={(event) => setBody(event.target.value)} maxLength={limit} placeholder={kind === 'thought' ? 'Что думаете?' : kind === 'photo' ? 'Добавьте подпись…' : 'Расскажите подробнее…'} aria-label="Текст публикации" />
         <div className="postComposerMeta"><span>{body.length} / {limit}</span></div>
-        <label className="postAudience">
-          <span>Кто увидит</span>
-          <select value={visibility} onChange={(event) => setVisibility(event.target.value as 'public' | 'followers')}>
-            <option value="public">Все</option>
-            <option value="followers">Подписчики</option>
-          </select>
-        </label>
+        <label className="postAudience"><span>Кто увидит</span><select value={visibility} onChange={(event) => setVisibility(event.target.value as 'public' | 'followers')}><option value="public">Все</option><option value="followers">Подписчики</option></select></label>
         {error ? <p className="messengerError" role="alert">{error}</p> : null}
-        <Button type="submit" disabled={busy || uploading || (kind === 'photo' ? media.length === 0 || body.length > limit : body.trim().length === 0 || body.length > limit)} fullWidth>
-          {busy ? 'Публикуем…' : 'Опубликовать'}
-        </Button>
+        <Button type="submit" disabled={busy || uploading || (kind === 'photo' ? media.length === 0 || body.length > limit : body.trim().length === 0 || body.length > limit)} fullWidth>{busy ? 'Публикуем…' : 'Опубликовать'}</Button>
       </form>
     </AppShell>
   );
