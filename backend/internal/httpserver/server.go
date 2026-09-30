@@ -15,6 +15,7 @@ type Server struct {
 	readiness     func(context.Context) error
 	allowedOrigin string
 	limiter       *RateLimiter
+	securitySink  SecurityEventSink
 }
 
 type healthResponse struct {
@@ -31,11 +32,12 @@ func New(logger *slog.Logger) *Server {
 func (s *Server) Register(register func(*http.ServeMux)) { register(s.mux) }
 func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness = check }
 func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
+func (s *Server) SetSecurityEventSink(sink SecurityEventSink) { s.securitySink = sink }
 
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
 	handler = bodyLimitMiddleware(handler)
-	handler = rateLimitMiddleware(s.limiter, handler)
+	handler = rateLimitMiddleware(s.limiter, s.securitySink, handler)
 	handler = corsMiddleware(s.allowedOrigin, handler)
 	handler = securityHeaders(handler)
 	handler = requestTelemetryMiddleware(s.logger, handler)
