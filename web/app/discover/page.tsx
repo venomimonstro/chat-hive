@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/AppShell';
+import { AuthenticatedImage } from '../../components/AuthenticatedImage';
 import { Avatar, Surface } from '../../components/ui';
 import { getAccessToken, refreshSession } from '../../lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
 type FeedMode = 'for-you' | 'following';
+type MediaRef = { id: string; mime_type: string; width: number; height: number; url: string };
 type FeedItem = {
   id: string;
   author_id: string;
@@ -16,6 +18,7 @@ type FeedItem = {
   author_name: string;
   kind: 'thought' | 'photo' | 'post';
   body: string;
+  cover?: MediaRef;
   replies_count: number;
   reactions_count: number;
   created_at: string;
@@ -91,7 +94,8 @@ export default function DiscoverPage() {
               <div><strong>{item.author_name || item.author_username}</strong><span>@{item.author_username} · {formatDate(item.created_at)}</span></div>
             </a>
             <a className="discoverPostLink" href={`/post/${item.id}`}>
-              <p>{item.body}</p>
+              {item.cover ? <AuthenticatedImage className="discoverCover" src={item.cover.url} alt="Изображение публикации" /> : null}
+              {item.body ? <p>{item.body}</p> : null}
             </a>
             <div className="postActions">
               <span>♡ {item.reactions_count}</span>
