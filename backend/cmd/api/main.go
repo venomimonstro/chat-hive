@@ -21,6 +21,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/media"
 	"github.com/venomimonstro/chat-hive/backend/internal/messaging"
 	"github.com/venomimonstro/chat-hive/backend/internal/moderation"
+	"github.com/venomimonstro/chat-hive/backend/internal/notifications"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 	"github.com/venomimonstro/chat-hive/backend/internal/posts"
 	"github.com/venomimonstro/chat-hive/backend/internal/requests"
@@ -54,6 +55,9 @@ func main() {
 		identityHTTP.SetYandexOAuth(identity.NewYandexOAuth(store, identity.YandexConfig{ClientID: cfg.YandexClientID, RedirectURL: cfg.YandexRedirectURL, WebCompleteURL: cfg.WebOrigin + "/auth/yandex-complete"}))
 	}
 
+	notificationService := notifications.NewService(notifications.NewPostgresStore(pool))
+	notificationHTTP := notifications.NewHTTPHandler(notificationService, identityService, logger)
+
 	onboardingHTTP := onboarding.NewHTTPHandler(onboarding.NewService(onboarding.NewPostgresStore(pool)), identityService, logger)
 	socialHTTP := social.NewHTTPHandler(social.NewService(social.NewPostgresStore(pool)), identityService, logger)
 	messagingHTTP := messaging.NewHTTPHandler(messaging.NewService(messaging.NewPostgresStore(pool)), identityService, logger)
@@ -85,6 +89,7 @@ func main() {
 	app.Register(adminHTTP.Register)
 	app.Register(communityHTTP.Register)
 	app.Register(channelHTTP.Register)
+	app.Register(notificationHTTP.Register)
 	app.Register(mediaHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
