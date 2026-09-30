@@ -53,31 +53,43 @@ type Store interface {
 	ListPosts(ctx context.Context, viewerID, slug string, limit int) ([]Post, error)
 }
 
+type PublicStore interface {
+	GetPublic(ctx context.Context, slug string) (Channel, error)
+	DiscoverPublic(ctx context.Context, limit int) ([]Channel, error)
+	ListPublicPosts(ctx context.Context, slug string, limit int) ([]Post, error)
+}
+
 type Service struct{ store Store }
 
 func NewService(store Store) *Service { return &Service{store: store} }
+func (s *Service) publicStore() (PublicStore, bool) { store, ok := s.store.(PublicStore); return store, ok }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Channel, error) {
 	input.OwnerID = strings.TrimSpace(input.OwnerID)
 	input.Slug = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(input.Slug, "@")))
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
-	if input.OwnerID == "" || !slugPattern.MatchString(input.Slug) || len([]rune(input.Title)) < 2 || len([]rune(input.Title)) > 80 || len([]rune(input.Description)) > 1000 {
-		return Channel{}, ErrInvalid
-	}
+	if input.OwnerID == "" || !slugPattern.MatchString(input.Slug) || len([]rune(input.Title)) < 2 || len([]rune(input.Title)) > 80 || len([]rune(input.Description)) > 1000 { return Channel{}, ErrInvalid }
 	return s.store.Create(ctx, input)
 }
 
 func (s *Service) Get(ctx context.Context, viewerID, slug string) (Channel, error) {
-	slug = normalizeSlug(slug)
-	if strings.TrimSpace(viewerID) == "" || !slugPattern.MatchString(slug) { return Channel{}, ErrNotFound }
+	viewerID = strings.TrimSpace(viewerID); slug = normalizeSlug(slug)
+	if !slugPattern.MatchString(slug) { return Channel{}, ErrNotFound }
+	if viewerID == "" {
+		store, ok := s.publicStore(); if !ok { return Channel{}, ErrNotFound }
+		return store.GetPublic(ctx, slug)
+	}
 	return s.store.Get(ctx, viewerID, slug)
 }
 
 func (s *Service) Discover(ctx context.Context, viewerID string, limit int) ([]Channel, error) {
-	if strings.TrimSpace(viewerID) == "" { return nil, ErrForbidden }
-	if limit <= 0 { limit = 30 }
-	if limit > 50 { limit = 50 }
+	viewerID = strings.TrimSpace(viewerID)
+	if limit <= 0 { limit = 30 }; if limit > 50 { limit = 50 }
+	if viewerID == "" {
+		store, ok := s.publicStore(); if !ok { return nil, ErrForbidden }
+		return store.DiscoverPublic(ctx, limit)
+	}
 	return s.store.Discover(ctx, viewerID, limit)
 }
 
@@ -95,8 +107,12 @@ func (s *Service) CreatePost(ctx context.Context, userID, slug, body string) (Po
 
 func (s *Service) ListPosts(ctx context.Context, viewerID, slug string, limit int) ([]Post, error) {
 	viewerID = strings.TrimSpace(viewerID); slug = normalizeSlug(slug)
-	if viewerID == "" || !slugPattern.MatchString(slug) { return nil, ErrNotFound }
+	if !slugPattern.MatchString(slug) { return nil, ErrNotFound }
 	if limit <= 0 { limit = 30 }; if limit > 50 { limit = 50 }
+	if viewerID == "" {
+		store, ok := s.publicStore(); if !ok { return nil, ErrNotFound }
+		return store.ListPublicPosts(ctx, slug, limit)
+	}
 	return s.store.ListPosts(ctx, viewerID, slug, limit)
 }
 
