@@ -138,7 +138,13 @@ export function ProfileClient({ username }: { username: string }) {
                     {profile.is_blocked ? 'Разблокировать' : 'Заблокировать'}
                   </Button>
                 </div>
-              ) : <a className="uiButton uiButton--secondary" href="/settings/profile">Редактировать профиль</a>}
+              ) : (
+                <div className="profileActions">
+                  <a className="uiButton uiButton--secondary" href="/settings/profile">Редактировать профиль</a>
+                  <a className="uiButton uiButton--ghost" href="/settings/traffic">Трафик</a>
+                  <a className="uiButton uiButton--ghost" href="/settings/security">Безопасность</a>
+                </div>
+              )}
             </div>
 
             <div className="profileStats">
@@ -163,7 +169,7 @@ export function ProfileClient({ username }: { username: string }) {
               ) : null}
               {posts.map((post) => (
                 <a className="profilePostCard" href={`/post/${post.id}`} key={post.id}>
-                  <div className="profilePostMeta"><span>{post.kind === 'thought' ? 'Мысль' : 'Пост'}</span><time>{formatDate(post.created_at)}</time></div>
+                  <div className="profilePostMeta"><span>{post.kind === 'thought' ? 'Мысль' : post.kind === 'photo' ? 'Фото' : 'Пост'}</span><time>{formatDate(post.created_at)}</time></div>
                   <p>{post.body}</p>
                   <div className="profilePostStats"><span>♡ {post.reactions_count}</span><span>💬 {post.replies_count}</span></div>
                 </a>
