@@ -4,6 +4,14 @@ import { getAccessToken, refreshSession } from './api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
+export type GroupDetails = {
+  chat_id: string;
+  title: string;
+  description: string;
+  role: 'owner' | 'admin' | 'member';
+  members_count: number;
+};
+
 async function apiFetch(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
   if (!access) access = (await refreshSession())?.access_token ?? null;
@@ -27,9 +35,22 @@ async function errorMessage(response: Response) {
   return payload?.error?.message ?? 'Request failed';
 }
 
+export async function getGroupDetails(chatId: string): Promise<GroupDetails> {
+  const response = await apiFetch(`/api/v1/groups/${encodeURIComponent(chatId)}`);
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json() as Promise<GroupDetails>;
+}
+
 export async function transferGroupOwnership(chatId: string, username: string) {
   const response = await apiFetch(`/api/v1/groups/${encodeURIComponent(chatId)}/owner`, {
     method: 'POST', body: JSON.stringify({ username })
   });
   if (!response.ok) throw new Error(await errorMessage(response));
+}
+
+export async function moderateDeleteGroupMessage(chatId: string, messageId: string) {
+  const response = await apiFetch(`/api/v1/groups/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok && response.status !== 404) throw new Error(await errorMessage(response));
 }
