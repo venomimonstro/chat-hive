@@ -1,0 +1,88 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Surface } from '../../../components/ui';
+import { getAdminPrincipal, listSecurityEvents, SecurityEvent } from '../../../lib/admin';
+
+const FILTERS = ['', 'critical', 'high', 'medium', 'low', 'info'] as const;
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+export default function SecurityAdminPage() {
+  const router = useRouter();
+  const [roles, setRoles] = useState<string[]>([]);
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [severity, setSeverity] = useState('');
+  const [selected, setSelected] = useState<SecurityEvent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function load(filter = severity) {
+    setError('');
+    try {
+      const principal = await getAdminPrincipal();
+      if (!principal) { router.replace('/'); return; }
+      if (!principal.roles.some((role) => role === 'security' || role === 'owner')) { router.replace('/admin/moderation'); return; }
+      setRoles(principal.roles);
+      const items = await listSecurityEvents(filter);
+      setEvents(items);
+      if (selected && !items.some((item) => item.id === selected.id)) setSelected(null);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить security events');
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+  useEffect(() => { if (!loading) void load(severity); }, [severity]);
+
+  const criticalCount = useMemo(() => events.filter((item) => item.severity === 'critical' || item.severity === 'high').length, [events]);
+
+  return (
+    <main className="adminShell">
+      <aside className="adminSidebar">
+        <a className="adminBrand" href="/admin/moderation">CHAT <span>Admin</span></a>
+        <nav><a href="/admin/moderation">Модерация</a><a className="isActive" href="/admin/security">Безопасность</a><a href="/">Вернуться в CHAT</a></nav>
+        <div className="adminRoles">{roles.map((role) => <span key={role}>{role}</span>)}</div>
+      </aside>
+      <section className="adminContent">
+        <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{criticalCount}</strong></header>
+        <div className="adminSecurityFilters" aria-label="Фильтр важности">
+          {FILTERS.map((item) => <button type="button" key={item || 'all'} className={severity === item ? 'isActive' : ''} onClick={() => setSeverity(item)}>{item || 'all'}</button>)}
+        </div>
+        {loading ? <p className="adminState">Загружаем события…</p> : null}
+        {error ? <p className="adminError" role="alert">{error}</p> : null}
+        <div className="adminGrid">
+          <div className="adminCaseList">
+            {events.map((item) => (
+              <button type="button" key={item.id} className={`adminCase ${selected?.id === item.id ? 'isSelected' : ''}`} onClick={() => setSelected(item)}>
+                <div><span className={`adminSeverity severity-${item.severity}`}>{item.severity}</span><time>{formatDate(item.created_at)}</time></div>
+                <strong>{item.event_type}</strong>
+                <p>{item.subject_type}{item.subject_id ? ` · ${item.subject_id}` : ''}{item.source_ip ? ` · ${item.source_ip}` : ''}</p>
+              </button>
+            ))}
+            {!loading && events.length === 0 ? <Surface className="adminEmpty">Security events по выбранному фильтру отсутствуют.</Surface> : null}
+          </div>
+          <div className="adminCasePanel">
+            {selected ? <Surface className="adminCaseDetails">
+              <span className={`adminSeverity severity-${selected.severity}`}>{selected.severity}</span>
+              <h2>{selected.event_type}</h2>
+              <dl>
+                <div><dt>Время</dt><dd>{formatDate(selected.created_at)}</dd></div>
+                <div><dt>User</dt><dd>{selected.user_id ?? '—'}</dd></div>
+                <div><dt>Session</dt><dd>{selected.session_id ?? '—'}</dd></div>
+                <div><dt>IP</dt><dd>{selected.source_ip ?? '—'}</dd></div>
+                <div><dt>Subject</dt><dd>{selected.subject_type || '—'} {selected.subject_id}</dd></div>
+              </dl>
+              <p className="adminNotice">Security feed содержит технические сигналы и не предоставляет доступ к содержимому пользовательских сообщений.</p>
+              <pre className="adminSecurityMetadata">{JSON.stringify(selected.metadata ?? {}, null, 2)}</pre>
+            </Surface> : <Surface className="adminEmpty">Выберите security event.</Surface>}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
