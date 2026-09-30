@@ -55,7 +55,13 @@ func (h *HTTPHandler) connect(w http.ResponseWriter,r *http.Request) {
 	defer cancel()
 	client:=&Client{UserID:userID,Send:make(chan Event,64)}
 	h.hub.Register(client)
-	defer h.hub.Unregister(client)
+	connectedAt:=time.Now()
+	h.logger.Info("realtime_connected","connections",h.hub.Metrics().Connections)
+	defer func(){
+		h.hub.Unregister(client)
+		metrics:=h.hub.Metrics()
+		h.logger.Info("realtime_disconnected","duration_ms",time.Since(connectedAt).Milliseconds(),"connections",metrics.Connections,"published",metrics.Published,"dropped",metrics.Dropped)
+	}()
 
 	if err:=wsjson.Write(ctx,conn,Event{Type:"ready",OccurredAt:time.Now().UTC().Format(time.RFC3339Nano)});err!=nil{return}
 	writerDone:=make(chan struct{})
@@ -69,7 +75,7 @@ func (h *HTTPHandler) connect(w http.ResponseWriter,r *http.Request) {
 		if err!=nil{return}
 		switch strings.ToLower(strings.TrimSpace(command.Type)) {
 		case "ping":
-			select{case client.Send<-Event{Type:"pong",OccurredAt:time.Now().UTC().Format(time.RFC3339Nano)}:default:}
+			select{case client.Send<-Event{Type:"pong",OccurredAt:time.Now().UTC().Format(time.RFC3339Nano)}:default:{ h.logger.Warn("realtime_client_queue_full","connections",h.hub.Metrics().Connections) }}
 		default:
 			_ = conn.Close(websocket.StatusPolicyViolation,"unsupported realtime command")
 			return
