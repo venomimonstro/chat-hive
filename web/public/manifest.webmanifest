@@ -1,0 +1,20 @@
+{
+  "name": "CHAT — Найди своих",
+  "short_name": "CHAT",
+  "description": "Быстрый социальный мессенджер для общения и поиска людей по интересам.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "ru",
+  "categories": ["social", "communication"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
