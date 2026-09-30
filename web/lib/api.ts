@@ -67,6 +67,21 @@ export type ChatSummary = {
   updated_at: string;
 };
 
+export type Group = {
+  chat_id: string;
+  title: string;
+  description: string;
+  role: 'owner' | 'admin' | 'member';
+  members_count: number;
+};
+
+export type GroupMember = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  role: 'owner' | 'admin' | 'member';
+};
+
 export function getAccessToken() {
   if (typeof window === 'undefined') return null;
   return window.sessionStorage.getItem(ACCESS_KEY);
@@ -231,4 +246,51 @@ export async function markChatRead(chatId: string, sequence: number) {
     method: 'POST', body: JSON.stringify({ sequence })
   });
   if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function createGroup(input: { title: string; description: string }): Promise<Group> {
+  const response = await request('/api/v1/groups', { method: 'POST', body: JSON.stringify(input) });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<Group>;
+}
+
+export async function getGroup(chatId: string): Promise<Group> {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<Group>;
+}
+
+export async function listGroupMembers(chatId: string): Promise<GroupMember[]> {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}/members`);
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { items: GroupMember[] };
+  return payload.items;
+}
+
+export async function setGroupMemberRole(chatId: string, username: string, role: 'admin' | 'member') {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}/members/${encodeURIComponent(username)}/role`, { method: 'PUT', body: JSON.stringify({ role }) });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function removeGroupMember(chatId: string, username: string) {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}/members/${encodeURIComponent(username)}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function leaveGroup(chatId: string) {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}/leave`, { method: 'POST' });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function createGroupInvite(chatId: string, ttlHours = 168, maxUses = 0): Promise<string> {
+  const response = await request(`/api/v1/groups/${encodeURIComponent(chatId)}/invites`, { method: 'POST', body: JSON.stringify({ ttl_hours: ttlHours, max_uses: maxUses }) });
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { token: string };
+  return payload.token;
+}
+
+export async function joinGroupByInvite(token: string): Promise<Group> {
+  const response = await request('/api/v1/groups/join', { method: 'POST', body: JSON.stringify({ token }) });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<Group>;
 }
