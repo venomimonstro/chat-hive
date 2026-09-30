@@ -19,18 +19,19 @@ type ProfilePost = {
   created_at: string;
 };
 
-async function loadPosts(username: string): Promise<ProfilePost[] | null> {
-  let access = getAccessToken();
-  if (!access) access = (await refreshSession())?.access_token ?? null;
-  if (!access) return null;
+async function loadPosts(username: string): Promise<ProfilePost[]> {
+  const access = getAccessToken();
+  const headers = new Headers({ Accept: 'application/json' });
+  if (access) headers.set('Authorization', `Bearer ${access}`);
   let response = await fetch(`${API_BASE}/api/v1/profiles/${encodeURIComponent(username)}/posts?limit=30`, {
-    credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', Authorization: `Bearer ${access}` }
+    credentials: 'include', cache: 'no-store', headers
   });
-  if (response.status === 401) {
+  if (response.status === 401 && access) {
     const refreshed = await refreshSession();
-    if (!refreshed) return null;
+    const retryHeaders = new Headers({ Accept: 'application/json' });
+    if (refreshed) retryHeaders.set('Authorization', `Bearer ${refreshed.access_token}`);
     response = await fetch(`${API_BASE}/api/v1/profiles/${encodeURIComponent(username)}/posts?limit=30`, {
-      credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', Authorization: `Bearer ${refreshed.access_token}` }
+      credentials: 'include', cache: 'no-store', headers: retryHeaders
     });
   }
   if (!response.ok) throw new Error('Не удалось загрузить публикации');
@@ -50,13 +51,18 @@ export function ProfileClient({ username }: { username: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  function requireLogin() {
+    const next = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : `/u/${username}`;
+    router.push(`/login?next=${encodeURIComponent(next)}`);
+  }
+
   async function load() {
     setLoading(true);
     setError('');
     try {
       const [nextProfile, nextPosts] = await Promise.all([getPublicProfile(username), loadPosts(username)]);
       setProfile(nextProfile);
-      setPosts(nextPosts ?? []);
+      setPosts(nextPosts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Профиль недоступен');
     } finally {
@@ -68,6 +74,7 @@ export function ProfileClient({ username }: { username: string }) {
 
   async function toggleFollow() {
     if (!profile || busy) return;
+    if (!getAccessToken()) { requireLogin(); return; }
     setBusy(true);
     try {
       await setFollow(profile.username, !profile.is_following);
@@ -85,6 +92,7 @@ export function ProfileClient({ username }: { username: string }) {
 
   async function toggleBlock() {
     if (!profile || busy) return;
+    if (!getAccessToken()) { requireLogin(); return; }
     const next = !profile.is_blocked;
     setBusy(true);
     try {
@@ -104,6 +112,7 @@ export function ProfileClient({ username }: { username: string }) {
 
   async function messageUser() {
     if (!profile || profile.is_self || profile.is_blocked || busy) return;
+    if (!getAccessToken()) { requireLogin(); return; }
     setBusy(true);
     try {
       const chat = await ensureDirectChat(profile.username);
