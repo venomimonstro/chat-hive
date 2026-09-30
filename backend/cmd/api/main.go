@@ -27,6 +27,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/realtime"
 	"github.com/venomimonstro/chat-hive/backend/internal/requests"
 	"github.com/venomimonstro/chat-hive/backend/internal/search"
+	"github.com/venomimonstro/chat-hive/backend/internal/securityevents"
 	"github.com/venomimonstro/chat-hive/backend/internal/social"
 )
 
@@ -108,6 +109,7 @@ func main() {
 	app.Register(mediaHTTP.Register)
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
+	app.SetSecurityEventSink(securityevents.NewPostgresStore(pool))
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	serverErr := make(chan error, 1)
