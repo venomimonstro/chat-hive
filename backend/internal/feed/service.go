@@ -9,6 +9,14 @@ import (
 
 var ErrInvalidMode = errors.New("invalid feed mode")
 
+type MediaRef struct {
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	URL      string `json:"url"`
+}
+
 type Item struct {
 	ID             string    `json:"id"`
 	AuthorID       string    `json:"author_id"`
@@ -16,6 +24,7 @@ type Item struct {
 	AuthorName     string    `json:"author_name"`
 	Kind           string    `json:"kind"`
 	Body           string    `json:"body"`
+	Cover          *MediaRef `json:"cover,omitempty"`
 	RepliesCount   int64     `json:"replies_count"`
 	ReactionsCount int64     `json:"reactions_count"`
 	CreatedAt      time.Time `json:"created_at"`
