@@ -1,8 +1,14 @@
 'use client';
 
-import { ChatMessage, getAccessToken, ReactionSummary, refreshSession } from './api';
+import { ChatMessage, getAccessToken, refreshSession } from './api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+
+export type ReactionSummary = {
+  reaction: string;
+  count: number;
+  mine: boolean;
+};
 
 async function apiFetch(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
