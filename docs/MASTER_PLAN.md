@@ -47,13 +47,13 @@ Development currently proceeds directly in `main` at owner request. GitHub Actio
 | 08 | Reliable messaging/offline outbox/idempotency | IN PROGRESS |
 | 09 | Image/media pipeline | PLANNED |
 | 10 | Groups | IN PROGRESS |
-| 11 | Posts: thought/photo/post | PLANNED |
-| 12 | Feed | PLANNED |
-| 13 | Discovery | PLANNED |
+| 11 | Posts: thought/photo/post | IN PROGRESS |
+| 12 | Feed | IN PROGRESS |
+| 13 | Discovery | IN PROGRESS |
 | 14 | New-creator exploration distribution | PLANNED |
 | 15 | Communities | PLANNED |
 | 16 | Channels | PLANNED |
-| 17 | Global search | PLANNED |
+| 17 | Global search | IN PROGRESS |
 | 18 | Stranger requests + anti-spam | PLANNED |
 | 19 | Moderation core | PLANNED |
 | 20 | Admin console | PLANNED |
@@ -74,13 +74,17 @@ The repository contains architecture/security/data/API rules, local PostgreSQL/R
 
 Identity currently includes persistent email magic links, hashed one-time challenges, short-lived access credentials, HttpOnly refresh credentials, server-side validation/revocation, refresh rotation with replay detection, Yandex ID Authorization Code + PKCE flow, production SMTP/STARTTLS transport and active-device/session listing. Yandex access tokens are not persisted in the browser or CHAT database.
 
-Onboarding includes username, display name, bio, persistent interests and atomic completion. Social Graph includes public profile lookup, follow/unfollow and block/unblock with server-side authorization semantics.
+Onboarding includes username, display name, bio, persistent interests and atomic completion. Social Graph includes public profile lookup, follow/unfollow, block/unblock, self-profile routing, profile editing and real profile publications.
 
-Messaging now uses PostgreSQL as durable source of truth. Direct chat creation is unique per user pair, blocked users cannot exchange messages, each chat has an ordered sequence, client_message_id provides retry idempotency, message history is cursor-based and read position is server-side. The Next.js messenger has responsive desktop/mobile layout, optimistic sending and a browser-persisted outbox that reuses client_message_id after reconnect/reload.
+Messaging uses PostgreSQL as durable source of truth. Direct chat creation is unique per user pair, blocked users cannot exchange messages, each chat has an ordered sequence, client_message_id provides retry idempotency, message history is sequence-cursor based and read position is server-side. The Next.js messenger has responsive desktop/mobile layout, deep-link chat selection, optimistic sending, persistent offline outbox, reply/edit/delete UI and older-history pagination. Backend reactions are implemented; chat reaction UI remains.
 
-Groups reuse the same chat/message model. The schema supports owner/admin/member roles and hashed limited/expiring invite tokens. Group service/store/API foundation implements create, membership listing, role changes, removal, leave, invite/join/revoke flows with transactional permission checks.
+Groups reuse the same chat/message model. Owner/admin/member roles, hashed limited/expiring invite tokens, member management, group creation/details and invite/join web flows are implemented. Remaining group work is owner transfer, moderation controls and rate limits.
 
-Important schema correction: migration 000007 is a self-contained messaging + groups migration and creates chats, chat_members, direct_chat_pairs, messages, reactions and group_invites in dependency-safe order.
+Posts now have durable schema and API for thoughts/posts, visibility, replies, reactions, saves and soft deletion. Web includes Create Hub, thought/post composer, permalink, discussion thread and profile publication list. Photo publishing intentionally waits for Sprint 09 media pipeline.
+
+Feed/Discover has an explainable rule-based backend and mobile-first screen. Modes `for-you` and `following` are implemented. Current ranking uses follows, shared interests and discussion activity while excluding blocked relationships. User-facing recommendation reasons are returned by the backend.
+
+Important schema correction: migration 000007 is a self-contained messaging + groups migration and creates chats, chat_members, direct_chat_pairs, messages, reactions and group_invites in dependency-safe order. Migration 000008 creates publishing tables.
 
 ## Sprint 03 remaining
 
@@ -91,21 +95,43 @@ Important schema correction: migration 000007 is a self-contained messaging + gr
 ## Sprint 05 remaining
 
 - Followers/following list endpoints and screens.
-- Profile edit screen after onboarding.
 - Mutual/friend relationship semantics after product review.
+
+## Sprint 06 remaining
+
+- Add WebSocket transport only with correctly locked dependency checksums.
+- Authentication, heartbeat, reconnect, bounded connection limits and origin validation.
+- Message events accelerate delivery but never replace PostgreSQL/REST recovery sync.
 
 ## Sprint 07–08 remaining
 
-- Message edit/delete/reply/reactions API and UI.
-- Older-history pagination UI.
-- Replace temporary polling with realtime transport while retaining REST recovery sync.
-- Move production-grade offline queue from simple localStorage foundation to IndexedDB with bounded retention and migration/versioning.
+- Chat reaction UI without per-message N+1 requests.
+- Upgrade browser outbox from localStorage to versioned IndexedDB with bounded retention.
+- Composite pagination for chat list to avoid timestamp collision edge cases.
+- Direct chat lookup endpoint for deep links outside first chat-list page.
 
 ## Sprint 10 remaining
 
-- Group UI: creation, details, member list, role management and invite sharing.
 - Owner-transfer flow before owner can leave.
 - Group-level moderation controls and rate limits.
+
+## Sprint 11 remaining
+
+- Photo posts after secure media pipeline.
+- Improve post edit response to include canonical author fields.
+- Composite post cursor `(created_at,id)` to remove timestamp-collision edge cases.
+- Reaction state/toggle UI without optimistic double-count drift.
+
+## Sprint 12–13 remaining
+
+- People discovery/search.
+- Community discovery after Sprint 15 exists.
+- Hide/not-interested feedback and recommendation preference signals.
+- Add feed pagination UI and composite cursor.
+
+## Sprint 17 current gap
+
+The Discover search button points to `/search`. Implement the route and backend before considering this sprint complete; no dead navigation is acceptable.
 
 ## Definition of Done for every feature sprint
 
@@ -138,4 +164,4 @@ Before implementing a sprint, an AI agent must:
 
 ## Current next action
 
-Finish Sprint 10 group UI and permission edge cases, then complete direct-message actions and history pagination. After the durable messaging surface is complete, add realtime transport as an acceleration layer rather than as the source of truth.
+Close live search and follower/following screens, then finish group owner transfer and IndexedDB offline queue. After durable messaging/social flows are clean, proceed to secure media pipeline; realtime transport follows once dependency locking can be generated and verified correctly.
