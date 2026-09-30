@@ -82,11 +82,15 @@ func (s *PostgresStore) Search(ctx context.Context, userID, query string, limit 
 	}
 	postRows.Close()
 
+	// Groups are private by default in the current product model. Until a public/private
+	// visibility flag and moderation workflow exist, global search may only return groups
+	// the viewer already belongs to. This prevents private group metadata disclosure.
 	groupRows, err := s.pool.Query(ctx, `
 		SELECT c.id::text,c.title,c.description,
 		       (SELECT count(*) FROM chat_members cm2 WHERE cm2.chat_id=c.id AND cm2.left_at IS NULL),
-		       EXISTS(SELECT 1 FROM chat_members cm3 WHERE cm3.chat_id=c.id AND cm3.user_id=$1::uuid AND cm3.left_at IS NULL)
+		       TRUE
 		FROM chats c
+		JOIN chat_members mine ON mine.chat_id=c.id AND mine.user_id=$1::uuid AND mine.left_at IS NULL
 		WHERE c.kind='group' AND (c.title ILIKE $2 OR c.description ILIKE $2)
 		ORDER BY c.updated_at DESC,c.id DESC
 		LIMIT $3`, userID, pattern, limit)
