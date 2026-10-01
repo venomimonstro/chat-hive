@@ -75,6 +75,12 @@ export type Group = {
   members_count: number;
 };
 
+export type GroupInvitePreview = {
+  title: string;
+  description: string;
+  members_count: number;
+};
+
 export type GroupMember = {
   user_id: string;
   username: string;
@@ -289,6 +295,17 @@ export async function createGroupInvite(chatId: string, ttlHours = 168, maxUses 
   if (!response.ok) throw new Error(await parseError(response));
   const payload = await response.json() as { token: string };
   return payload.token;
+}
+
+export async function getGroupInvitePreview(token: string): Promise<GroupInvitePreview> {
+  const response = await fetch(`${API_BASE}/api/v1/groups/invites/${encodeURIComponent(token)}/preview`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    credentials: 'omit',
+    cache: 'no-store'
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<GroupInvitePreview>;
 }
 
 export async function joinGroupByInvite(token: string): Promise<Group> {
