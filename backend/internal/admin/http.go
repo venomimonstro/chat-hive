@@ -28,6 +28,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/moderation/cases", h.listCases)
 	mux.HandleFunc("POST /api/v1/admin/moderation/cases/{case_id}/decision", h.decideCase)
 	mux.HandleFunc("GET /api/v1/admin/security/events", h.listSecurityEvents)
+	mux.HandleFunc("GET /api/v1/admin/security/summary", h.securitySummary)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +57,15 @@ func (h *HTTPHandler) listSecurityEvents(w http.ResponseWriter, r *http.Request)
 	if err != nil { h.domain(w, err); return }
 	h.audit(r, principal, "security_event_queue_view", "security_events", "", severity)
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) securitySummary(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "owner")
+	if !ok { return }
+	summary, err := h.service.GetSecuritySummary(r.Context(), principal)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "security_summary_view", "security_summary", "", "")
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
