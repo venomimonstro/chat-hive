@@ -34,6 +34,17 @@ services:
     networks: [data]
     security_opt: ["no-new-privileges:true"]
 
+  media-init:
+    image: alpine:3.22
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /media && chown -R 65532:65532 /media && chmod 0750 /media"]
+    volumes:
+      - media:/media
+    networks: [data]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+    security_opt: ["no-new-privileges:true"]
+
   migrate:
     build:
       context: ./backend
@@ -69,6 +80,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      media-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -85,8 +98,6 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?required}
-      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     ports:
       - "127.0.0.1:3000:3000"
     networks: [edge]
