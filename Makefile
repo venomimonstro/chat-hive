@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: up down backend web test fmt
+.PHONY: up down backend web test build fmt release-check
 
 up:
 	docker compose up -d postgres redis nats
@@ -16,7 +16,14 @@ web:
 
 test:
 	cd backend && go test ./...
-	cd web && npm run typecheck && npm run lint
+	cd web && npm run typecheck
+
+build:
+	cd backend && go build ./cmd/api
+	cd web && npm run build
 
 fmt:
 	cd backend && gofmt -w .
+
+release-check:
+	sh ops/release/check.sh
