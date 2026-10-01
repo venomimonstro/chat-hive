@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/AppShell';
 import { Button, Surface } from '../../../components/ui';
 import { DeviceSession, listSessions, revokeSession } from '../../../lib/api';
+import { deleteAccount, downloadAccountExport } from '../../../lib/accountData';
+
+const DELETE_PHRASE = 'DELETE MY CHAT ACCOUNT';
 
 function deviceLabel(userAgent: string) {
   const ua = userAgent.toLowerCase();
@@ -23,6 +26,9 @@ export function SecuritySessions() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
 
   async function load() {
     try {
@@ -57,16 +63,46 @@ export function SecuritySessions() {
     }
   }
 
+  async function exportData() {
+    if (exporting) return;
+    setExporting(true);
+    setError('');
+    try {
+      await downloadAccountExport();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось скачать данные');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function removeAccount() {
+    if (deleting || confirmation !== DELETE_PHRASE) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await deleteAccount(confirmation);
+      window.location.replace('/welcome');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить аккаунт');
+      setDeleting(false);
+    }
+  }
+
   return (
     <AppShell active="Я">
       <section className="securityScreen">
         <header className="securityHeader">
-          <span className="eyebrow">БЕЗОПАСНОСТЬ</span>
-          <h1>Ваши устройства</h1>
-          <p>Здесь отображаются активные входы в CHAT. Незнакомую сессию можно завершить сразу.</p>
+          <span className="eyebrow">БЕЗОПАСНОСТЬ И ДАННЫЕ</span>
+          <h1>Ваш аккаунт</h1>
+          <p>Управляйте активными входами и данными, которые относятся к вашему аккаунту CHAT.</p>
         </header>
 
         {error ? <div className="authError" role="alert">{error}</div> : null}
+
+        <div className="securitySectionHeader">
+          <div><h2>Ваши устройства</h2><p>Незнакомую сессию можно завершить сразу.</p></div>
+        </div>
         {loading ? <div className="securityLoading">Загружаем активные сессии…</div> : null}
 
         <div className="sessionList">
@@ -93,6 +129,26 @@ export function SecuritySessions() {
             );
           })}
         </div>
+
+        <div className="securitySectionHeader securityDataHeader">
+          <div><h2>Ваши данные</h2><p>Экспорт содержит профиль, ваши публикации, созданные сообщения, связи, сообщества и историю сессий.</p></div>
+        </div>
+        <Surface className="securityDataCard">
+          <div><strong>Скачать данные</strong><p>Получите машиночитаемую копию данных вашего аккаунта в JSON.</p></div>
+          <Button variant="secondary" disabled={exporting} onClick={() => void exportData()}>{exporting ? 'Готовим…' : 'Скачать'}</Button>
+        </Surface>
+
+        <Surface className="securityDangerCard">
+          <div>
+            <strong>Удалить аккаунт</strong>
+            <p>Идентичности, интересы, социальные связи и активные сессии будут удалены или отозваны. Некоторые записи могут сохраняться в обезличенном виде для целостности сервиса и обязательного хранения.</p>
+          </div>
+          <label className="securityDeleteConfirm">
+            <span>Для подтверждения введите <code>{DELETE_PHRASE}</code></span>
+            <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" spellCheck={false} />
+          </label>
+          <Button variant="danger" disabled={deleting || confirmation !== DELETE_PHRASE} onClick={() => void removeAccount()}>{deleting ? 'Удаляем…' : 'Удалить аккаунт'}</Button>
+        </Surface>
       </section>
     </AppShell>
   );
