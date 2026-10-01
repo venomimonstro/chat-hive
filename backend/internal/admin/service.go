@@ -43,6 +43,23 @@ type SecurityEvent struct {
 	CreatedAt   time.Time      `json:"created_at"`
 }
 
+type SecurityCounter struct {
+	Key   string `json:"key"`
+	Count int64  `json:"count"`
+}
+
+type SecuritySummary struct {
+	Critical15m int64             `json:"critical_15m"`
+	High15m     int64             `json:"high_15m"`
+	Medium15m   int64             `json:"medium_15m"`
+	Critical1h  int64             `json:"critical_1h"`
+	High1h      int64             `json:"high_1h"`
+	Events24h   int64             `json:"events_24h"`
+	TopTypes1h  []SecurityCounter `json:"top_event_types_1h"`
+	TopIPs1h    []SecurityCounter `json:"top_source_ips_1h"`
+	GeneratedAt time.Time         `json:"generated_at"`
+}
+
 type AuditInput struct {
 	ActorUserID string
 	ActorRole   string
@@ -58,6 +75,7 @@ type Store interface {
 	Principal(ctx context.Context, userID string) (Principal, error)
 	ListCases(ctx context.Context, statuses []string, limit int) ([]Case, error)
 	ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error)
+	SecuritySummary(ctx context.Context) (SecuritySummary, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
 }
@@ -87,6 +105,11 @@ func (s *Service) ListSecurityEvents(ctx context.Context, principal Principal, s
 	if severity != "" && severity != "info" && severity != "low" && severity != "medium" && severity != "high" && severity != "critical" { return nil, ErrInvalid }
 	if limit <= 0 { limit = 100 }; if limit > 500 { limit = 500 }
 	return s.store.ListSecurityEvents(ctx, severity, limit)
+}
+
+func (s *Service) GetSecuritySummary(ctx context.Context, principal Principal) (SecuritySummary, error) {
+	if !hasAnyRole(principal, "security", "owner") { return SecuritySummary{}, ErrForbidden }
+	return s.store.SecuritySummary(ctx)
 }
 
 func (s *Service) ResolveCase(ctx context.Context, principal Principal, caseID, decision, reason string) error {
