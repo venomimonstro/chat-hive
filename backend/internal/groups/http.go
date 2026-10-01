@@ -9,17 +9,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/venomimonstro/chat-hive/backend/internal/authhttp"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
 type HTTPHandler struct {
 	service *Service
-	auth    *identity.Service
+	guard   *authhttp.Guard
 	logger  *slog.Logger
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
-	return &HTTPHandler{service: service, auth: auth, logger: logger}
+	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -36,7 +37,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct {
 		Title       string `json:"title"`
@@ -52,7 +53,7 @@ func (h *HTTPHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	group, err := h.service.Get(r.Context(), session.UserID, r.PathValue("chat_id"))
 	if err != nil { h.domain(w, err); return }
@@ -60,7 +61,7 @@ func (h *HTTPHandler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) members(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	items, err := h.service.ListMembers(r.Context(), session.UserID, r.PathValue("chat_id"), limit)
@@ -69,7 +70,7 @@ func (h *HTTPHandler) members(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) setRole(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct { Role string `json:"role"` }
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -83,7 +84,7 @@ func (h *HTTPHandler) setRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) transferOwnership(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct { Username string `json:"username"` }
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -97,7 +98,7 @@ func (h *HTTPHandler) transferOwnership(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *HTTPHandler) removeMember(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	if err := h.service.RemoveMember(r.Context(), session.UserID, r.PathValue("chat_id"), r.PathValue("username")); err != nil {
 		h.domain(w, err); return
@@ -106,7 +107,7 @@ func (h *HTTPHandler) removeMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) leave(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	if err := h.service.Leave(r.Context(), session.UserID, r.PathValue("chat_id")); err != nil {
 		h.domain(w, err); return
@@ -115,7 +116,7 @@ func (h *HTTPHandler) leave(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) createInvite(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct {
 		TTLHours int `json:"ttl_hours"`
@@ -131,7 +132,7 @@ func (h *HTTPHandler) createInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) join(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct { Token string `json:"token"` }
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -144,7 +145,7 @@ func (h *HTTPHandler) join(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) revokeInvite(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct { Token string `json:"token"` }
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -155,20 +156,6 @@ func (h *HTTPHandler) revokeInvite(w http.ResponseWriter, r *http.Request) {
 		h.domain(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
-	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	session, err := h.auth.AuthenticateAccessToken(r.Context(), parts[1])
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	return session, true
 }
 
 func (h *HTTPHandler) domain(w http.ResponseWriter, err error) {
