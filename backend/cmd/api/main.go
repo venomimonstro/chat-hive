@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/venomimonstro/chat-hive/backend/internal/accountdata"
 	"github.com/venomimonstro/chat-hive/backend/internal/admin"
 	"github.com/venomimonstro/chat-hive/backend/internal/channels"
 	"github.com/venomimonstro/chat-hive/backend/internal/communities"
@@ -59,6 +60,7 @@ func main() {
 
 	notificationService := notifications.NewService(notifications.NewPostgresStore(pool))
 	notificationHTTP := notifications.NewHTTPHandler(notificationService, identityService, logger)
+	accountDataHTTP := accountdata.NewHTTPHandler(accountdata.NewStore(pool), identityService, logger)
 
 	onboardingHTTP := onboarding.NewHTTPHandler(onboarding.NewService(onboarding.NewPostgresStore(pool)), identityService, logger)
 	socialHTTP := social.NewHTTPHandler(social.NewService(social.NewPostgresStore(pool)), identityService, logger)
@@ -91,6 +93,7 @@ func main() {
 
 	app := httpserver.New(logger)
 	app.Register(identityHTTP.Register)
+	app.Register(accountDataHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.Register(socialHTTP.Register)
 	app.Register(messagingHTTP.Register)
