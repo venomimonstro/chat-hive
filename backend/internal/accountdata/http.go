@@ -3,6 +3,7 @@ package accountdata
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 type DataStore interface {
-	WriteExport(ctx context.Context, userID string, w http.ResponseWriter) error
+	WriteExport(ctx context.Context, userID string, w io.Writer) error
 	DeleteAccount(ctx context.Context, userID string) error
 }
 
