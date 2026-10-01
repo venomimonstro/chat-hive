@@ -68,6 +68,28 @@ func (r *Recorder) Record(ctx context.Context, event Event) error {
 	return err
 }
 
+func (r *Recorder) RateLimitExceeded(ctx context.Context, sourceIP, bucket, method, path string, retryAfter int) error {
+	severity := "low"
+	switch bucket {
+	case "auth", "realtime-ticket":
+		severity = "medium"
+	case "upload", "message":
+		severity = "low"
+	}
+	return r.Record(ctx, Event{
+		Type:        "rate_limit_exceeded",
+		Severity:    severity,
+		SourceIP:    sourceIP,
+		SubjectType: "http_rate_limit",
+		SubjectID:   bucket,
+		Metadata: map[string]any{
+			"method":      method,
+			"path":        path,
+			"retry_after": retryAfter,
+		},
+	})
+}
+
 func validSeverity(value string) bool {
 	switch value {
 	case "info", "low", "medium", "high", "critical":
