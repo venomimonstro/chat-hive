@@ -6,19 +6,19 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
+	"github.com/venomimonstro/chat-hive/backend/internal/authhttp"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
 type HTTPHandler struct {
 	service *Service
-	auth    *identity.Service
+	guard   *authhttp.Guard
 	logger  *slog.Logger
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
-	return &HTTPHandler{service: service, auth: auth, logger: logger}
+	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -27,7 +27,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *HTTPHandler) uploadImage(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok {
 		return
 	}
@@ -60,11 +60,11 @@ func (h *HTTPHandler) uploadImage(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) content(w http.ResponseWriter, r *http.Request) {
 	viewerID := ""
-	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
-		session, ok := h.authenticate(w, r)
-		if !ok {
-			return
-		}
+	session, authenticated, ok := h.guard.Optional(w, r)
+	if !ok {
+		return
+	}
+	if authenticated {
 		viewerID = session.UserID
 	}
 	file, object, err := h.service.Open(r.Context(), viewerID, r.PathValue("media_id"))
@@ -84,20 +84,6 @@ func (h *HTTPHandler) content(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = io.Copy(w, file)
-}
-
-func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
-	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	session, err := h.auth.AuthenticateAccessToken(r.Context(), parts[1])
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	return session, true
 }
 
 func int64String(value int64) string {
