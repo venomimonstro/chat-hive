@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Surface } from '../../../components/ui';
-import { getAdminPrincipal, listSecurityEvents, SecurityEvent } from '../../../lib/admin';
+import { getAdminPrincipal, getSecuritySummary, listSecurityEvents, SecurityEvent, SecuritySummary } from '../../../lib/admin';
 
 const FILTERS = ['', 'critical', 'high', 'medium', 'low', 'info'] as const;
 
@@ -15,31 +15,41 @@ export default function SecurityAdminPage() {
   const router = useRouter();
   const [roles, setRoles] = useState<string[]>([]);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [summary, setSummary] = useState<SecuritySummary | null>(null);
   const [severity, setSeverity] = useState('');
   const [selected, setSelected] = useState<SecurityEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  async function load(filter = severity) {
+  async function bootstrap() {
     setError('');
     try {
       const principal = await getAdminPrincipal();
       if (!principal) { router.replace('/'); return; }
       if (!principal.roles.some((role) => role === 'security' || role === 'owner')) { router.replace('/admin/moderation'); return; }
       setRoles(principal.roles);
+      const [items, securitySummary] = await Promise.all([listSecurityEvents(''), getSecuritySummary()]);
+      setEvents(items);
+      setSummary(securitySummary);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить Security Plane');
+    } finally { setLoading(false); }
+  }
+
+  async function loadEvents(filter: string) {
+    setError('');
+    try {
       const items = await listSecurityEvents(filter);
       setEvents(items);
       if (selected && !items.some((item) => item.id === selected.id)) setSelected(null);
     } catch (err) {
-      if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
       setError(err instanceof Error ? err.message : 'Не удалось загрузить security events');
-    } finally { setLoading(false); }
+    }
   }
 
-  useEffect(() => { void load(); }, []);
-  useEffect(() => { if (!loading) void load(severity); }, [severity]);
-
-  const criticalCount = useMemo(() => events.filter((item) => item.severity === 'critical' || item.severity === 'high').length, [events]);
+  useEffect(() => { void bootstrap(); }, []);
+  useEffect(() => { if (!loading) void loadEvents(severity); }, [severity]);
 
   return (
     <main className="adminShell">
@@ -49,11 +59,29 @@ export default function SecurityAdminPage() {
         <div className="adminRoles">{roles.map((role) => <span key={role}>{role}</span>)}</div>
       </aside>
       <section className="adminContent">
-        <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{criticalCount}</strong></header>
+        <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{summary?.critical_15m ?? 0}</strong></header>
+
+        {summary ? (
+          <section className="adminSecuritySummary" aria-label="Security summary">
+            <Surface className="adminMetric"><span>Critical · 15м</span><strong>{summary.critical_15m}</strong></Surface>
+            <Surface className="adminMetric"><span>High · 15м</span><strong>{summary.high_15m}</strong></Surface>
+            <Surface className="adminMetric"><span>Critical/High · 1ч</span><strong>{summary.critical_1h + summary.high_1h}</strong></Surface>
+            <Surface className="adminMetric"><span>Events · 24ч</span><strong>{summary.events_24h}</strong></Surface>
+            <Surface className="adminSecurityTop">
+              <h2>Типы событий · 1ч</h2>
+              {summary.top_event_types_1h.length ? summary.top_event_types_1h.map((item) => <div key={item.key}><span>{item.key}</span><strong>{item.count}</strong></div>) : <p>Событий нет.</p>}
+            </Surface>
+            <Surface className="adminSecurityTop">
+              <h2>Источники · 1ч</h2>
+              {summary.top_source_ips_1h.length ? summary.top_source_ips_1h.map((item) => <div key={item.key}><span>{item.key}</span><strong>{item.count}</strong></div>) : <p>IP-сигналов нет.</p>}
+            </Surface>
+          </section>
+        ) : null}
+
         <div className="adminSecurityFilters" aria-label="Фильтр важности">
           {FILTERS.map((item) => <button type="button" key={item || 'all'} className={severity === item ? 'isActive' : ''} onClick={() => setSeverity(item)}>{item || 'all'}</button>)}
         </div>
-        {loading ? <p className="adminState">Загружаем события…</p> : null}
+        {loading ? <p className="adminState">Загружаем Security Plane…</p> : null}
         {error ? <p className="adminError" role="alert">{error}</p> : null}
         <div className="adminGrid">
           <div className="adminCaseList">
