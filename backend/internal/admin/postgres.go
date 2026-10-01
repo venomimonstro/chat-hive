@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -75,6 +76,30 @@ func (s *PostgresStore) ListSecurityEvents(ctx context.Context, severity string,
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *PostgresStore) SecuritySummary(ctx context.Context) (SecuritySummary, error) {
+	var result SecuritySummary
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			count(*) FILTER (WHERE severity='critical' AND created_at >= now()-interval '15 minutes'),
+			count(*) FILTER (WHERE severity='high' AND created_at >= now()-interval '15 minutes'),
+			count(*) FILTER (WHERE severity='medium' AND created_at >= now()-interval '15 minutes'),
+			count(*) FILTER (WHERE severity='critical' AND created_at >= now()-interval '1 hour'),
+			count(*) FILTER (WHERE severity='high' AND created_at >= now()-interval '1 hour'),
+			count(*) FILTER (WHERE created_at >= now()-interval '24 hours')
+		FROM security_events`).Scan(&result.Critical15m,&result.High15m,&result.Medium15m,&result.Critical1h,&result.High1h,&result.Events24h)
+	if err != nil { return SecuritySummary{}, err }
+	rows, err := s.pool.Query(ctx, `SELECT event_type,count(*)::bigint FROM security_events WHERE created_at>=now()-interval '1 hour' GROUP BY event_type ORDER BY count(*) DESC,event_type LIMIT 8`)
+	if err != nil { return SecuritySummary{}, err }
+	for rows.Next() { var item SecurityCounter; if err:=rows.Scan(&item.Key,&item.Count);err!=nil{rows.Close();return SecuritySummary{},err};result.TopTypes1h=append(result.TopTypes1h,item) }
+	if err:=rows.Err();err!=nil{rows.Close();return SecuritySummary{},err};rows.Close()
+	rows, err = s.pool.Query(ctx, `SELECT source_ip::text,count(*)::bigint FROM security_events WHERE created_at>=now()-interval '1 hour' AND source_ip IS NOT NULL GROUP BY source_ip ORDER BY count(*) DESC,source_ip LIMIT 8`)
+	if err != nil { return SecuritySummary{}, err }
+	for rows.Next() { var item SecurityCounter; if err:=rows.Scan(&item.Key,&item.Count);err!=nil{rows.Close();return SecuritySummary{},err};result.TopIPs1h=append(result.TopIPs1h,item) }
+	if err:=rows.Err();err!=nil{rows.Close();return SecuritySummary{},err};rows.Close()
+	result.GeneratedAt=time.Now().UTC()
+	return result,nil
 }
 
 func (s *PostgresStore) ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error {
