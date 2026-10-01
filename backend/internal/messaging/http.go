@@ -8,17 +8,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/venomimonstro/chat-hive/backend/internal/authhttp"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
 type HTTPHandler struct {
 	service *Service
-	auth    *identity.Service
+	guard   *authhttp.Guard
 	logger  *slog.Logger
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
-	return &HTTPHandler{service: service, auth: auth, logger: logger}
+	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -35,33 +36,22 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *HTTPHandler) createDirect(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Username string `json:"username"`
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	var body struct { Username string `json:"username"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
 	chat, err := h.service.EnsureDirectChat(r.Context(), session.UserID, body.Username)
-	if err != nil {
-		h.writeDomainError(w, err)
-		return
-	}
+	if err != nil { h.writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, chat)
 }
 
 func (h *HTTPHandler) listChats(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	items, err := h.service.ListChats(
-		r.Context(), session.UserID, r.URL.Query().Get("before"), parseLimit(r.URL.Query().Get("limit")),
-	)
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	items, err := h.service.ListChats(r.Context(), session.UserID, r.URL.Query().Get("before"), parseLimit(r.URL.Query().Get("limit")))
 	if err != nil {
 		h.logger.Error("list chats failed", "error", err, "user_id", session.UserID)
 		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
@@ -71,14 +61,9 @@ func (h *HTTPHandler) listChats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) listMessages(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	items, err := h.service.ListMessages(
-		r.Context(), session.UserID, r.PathValue("chat_id"),
-		r.URL.Query().Get("before_sequence"), parseLimit(r.URL.Query().Get("limit")),
-	)
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	items, err := h.service.ListMessages(r.Context(), session.UserID, r.PathValue("chat_id"), r.URL.Query().Get("before_sequence"), parseLimit(r.URL.Query().Get("limit")))
 	if err != nil {
 		if errors.Is(err, ErrInvalidMessage) {
 			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid message cursor")
@@ -96,10 +81,8 @@ func (h *HTTPHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
 	var body struct {
 		ClientMessageID string `json:"client_message_id"`
 		Text            string `json:"text"`
@@ -113,42 +96,28 @@ func (h *HTTPHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		UserID: session.UserID, ChatID: r.PathValue("chat_id"),
 		ClientMessageID: body.ClientMessageID, Body: body.Text, ReplyToID: body.ReplyToID,
 	})
-	if err != nil {
-		h.writeDomainError(w, err)
-		return
-	}
+	if err != nil { h.writeDomainError(w, err); return }
 	status := http.StatusCreated
-	if duplicate {
-		status = http.StatusOK
-	}
+	if duplicate { status = http.StatusOK }
 	writeJSON(w, status, map[string]any{"message": message, "duplicate": duplicate})
 }
 
 func (h *HTTPHandler) editMessage(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Text string `json:"text"`
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	var body struct { Text string `json:"text"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
 	}
 	message, err := h.service.EditMessage(r.Context(), session.UserID, r.PathValue("message_id"), body.Text)
-	if err != nil {
-		h.writeDomainError(w, err)
-		return
-	}
+	if err != nil { h.writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, message)
 }
 
 func (h *HTTPHandler) deleteMessage(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
 	if err := h.service.DeleteMessage(r.Context(), session.UserID, r.PathValue("message_id")); err != nil {
 		h.writeDomainError(w, err)
 		return
@@ -157,34 +126,20 @@ func (h *HTTPHandler) deleteMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) listReactions(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
 	items, err := h.service.ListReactions(r.Context(), session.UserID, r.PathValue("message_id"))
-	if err != nil {
-		h.writeDomainError(w, err)
-		return
-	}
+	if err != nil { h.writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (h *HTTPHandler) addReaction(w http.ResponseWriter, r *http.Request) {
-	h.setReaction(w, r, true)
-}
-
-func (h *HTTPHandler) removeReaction(w http.ResponseWriter, r *http.Request) {
-	h.setReaction(w, r, false)
-}
+func (h *HTTPHandler) addReaction(w http.ResponseWriter, r *http.Request) { h.setReaction(w, r, true) }
+func (h *HTTPHandler) removeReaction(w http.ResponseWriter, r *http.Request) { h.setReaction(w, r, false) }
 
 func (h *HTTPHandler) setReaction(w http.ResponseWriter, r *http.Request, enabled bool) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if err := h.service.SetReaction(
-		r.Context(), session.UserID, r.PathValue("message_id"), r.PathValue("reaction"), enabled,
-	); err != nil {
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	if err := h.service.SetReaction(r.Context(), session.UserID, r.PathValue("message_id"), r.PathValue("reaction"), enabled); err != nil {
 		h.writeDomainError(w, err)
 		return
 	}
@@ -192,13 +147,9 @@ func (h *HTTPHandler) setReaction(w http.ResponseWriter, r *http.Request, enable
 }
 
 func (h *HTTPHandler) markRead(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Sequence int64 `json:"sequence"`
-	}
+	session, ok := h.guard.Required(w, r)
+	if !ok { return }
+	var body struct { Sequence int64 `json:"sequence"` }
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
 		return
@@ -226,20 +177,6 @@ func (h *HTTPHandler) writeDomainError(w http.ResponseWriter, err error) {
 		h.logger.Error("messaging request failed", "error", err)
 		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 	}
-}
-
-func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
-	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	session, err := h.auth.AuthenticateAccessToken(r.Context(), parts[1])
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	return session, true
 }
 
 func parseLimit(raw string) int {
