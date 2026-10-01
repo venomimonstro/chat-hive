@@ -34,6 +34,25 @@ services:
     networks: [data]
     security_opt: ["no-new-privileges:true"]
 
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    entrypoint: ["/chat-migrate"]
+    env_file:
+      - .env.production
+    environment:
+      CHAT_DATABASE_URL: ${CHAT_DATABASE_URL:?required}
+      CHAT_MIGRATIONS_DIR: /migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
   api:
     build:
       context: ./backend
@@ -48,8 +67,8 @@ services:
       CHAT_NATS_URL: nats://nats:4222
       CHAT_MEDIA_ROOT: /var/lib/chat/media
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
