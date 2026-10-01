@@ -28,6 +28,18 @@ export type SecurityEvent = {
   metadata: Record<string, unknown>;
   created_at: string;
 };
+export type SecurityCounter = { key: string; count: number };
+export type SecuritySummary = {
+  critical_15m: number;
+  high_15m: number;
+  medium_15m: number;
+  critical_1h: number;
+  high_1h: number;
+  events_24h: number;
+  top_event_types_1h: SecurityCounter[];
+  top_source_ips_1h: SecurityCounter[];
+  generated_at: string;
+};
 
 async function call(path: string, init: RequestInit = {}) {
   let access = getAccessToken();
@@ -70,6 +82,13 @@ export async function listSecurityEvents(severity = ''): Promise<SecurityEvent[]
   if (!response.ok) throw new Error('Не удалось загрузить security events');
   const payload = await response.json() as { items: SecurityEvent[] };
   return payload.items;
+}
+
+export async function getSecuritySummary(): Promise<SecuritySummary> {
+  const response = await call('/api/v1/admin/security/summary');
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить security summary');
+  return response.json() as Promise<SecuritySummary>;
 }
 
 export async function decideModerationCase(caseId: string, decision: 'resolve' | 'dismiss', reason: string) {
