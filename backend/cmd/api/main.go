@@ -135,6 +135,11 @@ func main() {
 	app.SetAllowedOrigin(cfg.WebOrigin)
 	app.SetSecurityEventSink(securityevents.NewPostgresStore(pool))
 	app.SetOperationalGate(featureflags.NewStore(pool))
+	pressureGate := httpserver.NewPressureGate(85, 70)
+	app.SetDegradedCheck(func() bool {
+		stats := pool.Stat()
+		return pressureGate.Update(stats.AcquiredConns(), stats.MaxConns())
+	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	serverErr := make(chan error, 1)
