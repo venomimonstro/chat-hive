@@ -132,6 +132,57 @@ func (s *PostgresStore) AcknowledgeSecurityAlert(ctx context.Context, eventID in
 	return tx.Commit(ctx)
 }
 
+func (s *PostgresStore) ListPlatformFlags(ctx context.Context) ([]PlatformFlag, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT key,enabled,reason,COALESCE(updated_by::text,''),updated_at
+		FROM platform_feature_flags
+		ORDER BY key`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	items := make([]PlatformFlag, 0, 8)
+	for rows.Next() {
+		var item PlatformFlag
+		var updatedBy string
+		if err := rows.Scan(&item.Key,&item.Enabled,&item.Reason,&updatedBy,&item.UpdatedAt); err != nil { return nil, err }
+		if updatedBy != "" { value := updatedBy; item.UpdatedBy = &value }
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) SetPlatformFlag(ctx context.Context, key string, enabled bool, actor Principal, reason string) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil { return err }
+	defer func(){ _ = tx.Rollback(ctx) }()
+
+	var previous bool
+	if err := tx.QueryRow(ctx, `
+		SELECT enabled FROM platform_feature_flags WHERE key=$1 FOR UPDATE`, key).Scan(&previous); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { return ErrNotFound }
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE platform_feature_flags
+		SET enabled=$2,reason=$3,updated_by=$4::uuid,updated_at=now()
+		WHERE key=$1`, key, enabled, reason, actor.UserID); err != nil { return err }
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO admin_audit_events(actor_user_id,actor_role,action,target_type,target_id,reason)
+		VALUES($1::uuid,$2,'platform_feature_flag_changed','feature_flag',$3,$4)`,
+		actor.UserID,strongestRole(actor),key,reason); err != nil { return err }
+
+	severity := "medium"
+	if !enabled { severity = "high" }
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO security_events(event_type,severity,user_id,subject_type,subject_id,metadata)
+		VALUES('platform_feature_flag_changed',$1,$2::uuid,'feature_flag',$3,
+		       jsonb_build_object('previous',$4,'enabled',$5,'reason',$6,'actor_role',$7))`,
+		severity,actor.UserID,key,previous,enabled,reason,strongestRole(actor)); err != nil { return err }
+
+	return tx.Commit(ctx)
+}
+
 func (s *PostgresStore) SecuritySummary(ctx context.Context) (SecuritySummary, error) {
 	var result SecuritySummary
 	err := s.pool.QueryRow(ctx, `
