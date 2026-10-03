@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Surface } from '../../../components/ui';
 import {
-  acknowledgeSecurityAlert, getAdminPrincipal, getSecuritySummary, listPlatformFlags, listSecurityAlerts,
-  listSecurityEvents, PlatformFlag, SecurityAlert, SecurityEvent, SecuritySummary, setPlatformFlag
+  acknowledgeSecurityAlert, getAdminPrincipal, getRuntimeSnapshot, getSecuritySummary, listPlatformFlags, listSecurityAlerts,
+  listSecurityEvents, PlatformFlag, RuntimeSnapshot, SecurityAlert, SecurityEvent, SecuritySummary, setPlatformFlag
 } from '../../../lib/admin';
 
 const FILTERS = ['', 'critical', 'high', 'medium', 'low', 'info'] as const;
@@ -20,6 +20,7 @@ export default function SecurityAdminPage() {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null);
   const [flags, setFlags] = useState<PlatformFlag[]>([]);
   const [changingFlag, setChangingFlag] = useState('');
   const [severity, setSeverity] = useState('');
@@ -35,16 +36,18 @@ export default function SecurityAdminPage() {
       if (!principal) { router.replace('/'); return; }
       if (!principal.roles.some((role) => role === 'security' || role === 'owner')) { router.replace('/admin/moderation'); return; }
       setRoles(principal.roles);
-      const [items, openAlerts, securitySummary, platformFlags] = await Promise.all([
+      const [items, openAlerts, securitySummary, platformFlags, runtimeSnapshot] = await Promise.all([
         listSecurityEvents(''),
         listSecurityAlerts('open'),
         getSecuritySummary(),
-        listPlatformFlags()
+        listPlatformFlags(),
+        getRuntimeSnapshot()
       ]);
       setEvents(items);
       setAlerts(openAlerts);
       setSummary(securitySummary);
       setFlags(platformFlags);
+      setRuntime(runtimeSnapshot);
     } catch (err) {
       if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
       setError(err instanceof Error ? err.message : 'Не удалось загрузить Security Plane');
@@ -109,6 +112,15 @@ export default function SecurityAdminPage() {
       </aside>
       <section className="adminContent">
         <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{summary?.critical_15m ?? 0}</strong></header>
+
+        {runtime ? (
+          <section className="adminRuntimeMetrics" aria-label="Runtime metrics">
+            <Surface className="adminMetric"><span>WebSocket</span><strong>{runtime.realtime_connections}</strong></Surface>
+            <Surface className="adminMetric"><span>Realtime dropped</span><strong>{runtime.realtime_dropped}</strong></Surface>
+            <Surface className="adminMetric"><span>DB acquired</span><strong>{runtime.db_acquired}/{runtime.db_max}</strong></Surface>
+            <Surface className="adminMetric"><span>DB idle</span><strong>{runtime.db_idle}</strong></Surface>
+          </section>
+        ) : null}
 
         <section className="adminOperationalControls" aria-label="Operational controls">
           <div className="adminAlertQueueHeader">
