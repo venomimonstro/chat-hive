@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Surface } from '../../../components/ui';
-import { getAdminPrincipal, getSecuritySummary, listSecurityEvents, SecurityEvent, SecuritySummary } from '../../../lib/admin';
+import {
+  acknowledgeSecurityAlert, getAdminPrincipal, getSecuritySummary, listSecurityAlerts,
+  listSecurityEvents, SecurityAlert, SecurityEvent, SecuritySummary
+} from '../../../lib/admin';
 
 const FILTERS = ['', 'critical', 'high', 'medium', 'low', 'info'] as const;
 
@@ -15,11 +18,13 @@ export default function SecurityAdminPage() {
   const router = useRouter();
   const [roles, setRoles] = useState<string[]>([]);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
   const [severity, setSeverity] = useState('');
   const [selected, setSelected] = useState<SecurityEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [acknowledging, setAcknowledging] = useState<number | null>(null);
 
   async function bootstrap() {
     setError('');
@@ -28,8 +33,13 @@ export default function SecurityAdminPage() {
       if (!principal) { router.replace('/'); return; }
       if (!principal.roles.some((role) => role === 'security' || role === 'owner')) { router.replace('/admin/moderation'); return; }
       setRoles(principal.roles);
-      const [items, securitySummary] = await Promise.all([listSecurityEvents(''), getSecuritySummary()]);
+      const [items, openAlerts, securitySummary] = await Promise.all([
+        listSecurityEvents(''),
+        listSecurityAlerts('open'),
+        getSecuritySummary()
+      ]);
       setEvents(items);
+      setAlerts(openAlerts);
       setSummary(securitySummary);
     } catch (err) {
       if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
@@ -48,6 +58,24 @@ export default function SecurityAdminPage() {
     }
   }
 
+  async function acknowledge(alert: SecurityAlert) {
+    const note = window.prompt('Кратко зафиксируйте, что проверено и какое действие принято:');
+    if (!note?.trim()) return;
+    setAcknowledging(alert.event_id);
+    setError('');
+    try {
+      await acknowledgeSecurityAlert(alert.event_id, note.trim());
+      setAlerts((current) => current.filter((item) => item.event_id !== alert.event_id));
+      const [items, securitySummary] = await Promise.all([listSecurityEvents(severity), getSecuritySummary()]);
+      setEvents(items);
+      setSummary(securitySummary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось подтвердить alert');
+    } finally {
+      setAcknowledging(null);
+    }
+  }
+
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => { if (!loading) void loadEvents(severity); }, [severity]);
 
@@ -60,6 +88,30 @@ export default function SecurityAdminPage() {
       </aside>
       <section className="adminContent">
         <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{summary?.critical_15m ?? 0}</strong></header>
+
+        <section className="adminAlertQueue" aria-label="Открытые security alerts">
+          <div className="adminAlertQueueHeader">
+            <div><span>INCIDENT QUEUE</span><h2>Open alerts</h2></div>
+            <strong>{alerts.length}</strong>
+          </div>
+          {alerts.length ? (
+            <div className="adminAlertList">
+              {alerts.map((alert) => (
+                <Surface className="adminAlertItem" key={alert.event_id}>
+                  <div className="adminAlertHeadline">
+                    <span className={`adminSeverity severity-${alert.severity}`}>{alert.severity}</span>
+                    <time>{formatDate(alert.created_at)}</time>
+                  </div>
+                  <strong>{alert.event_type}</strong>
+                  <p>{alert.subject_type}{alert.subject_id ? ` · ${alert.subject_id}` : ''}{alert.source_ip ? ` · ${alert.source_ip}` : ''}</p>
+                  <button type="button" disabled={acknowledging === alert.event_id} onClick={() => void acknowledge(alert)}>
+                    {acknowledging === alert.event_id ? 'Фиксируем…' : 'Проверено / acknowledge'}
+                  </button>
+                </Surface>
+              ))}
+            </div>
+          ) : <Surface className="adminEmpty">Открытых high/critical alerts нет.</Surface>}
+        </section>
 
         {summary ? (
           <section className="adminSecuritySummary" aria-label="Security summary">
