@@ -2,7 +2,7 @@
 
 import { ChatMessage, getAccessToken, refreshSession } from './api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 export type ReactionSummary = {
   reaction: string;
