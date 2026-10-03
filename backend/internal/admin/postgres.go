@@ -78,6 +78,60 @@ func (s *PostgresStore) ListSecurityEvents(ctx context.Context, severity string,
 	return items, rows.Err()
 }
 
+func (s *PostgresStore) ListSecurityAlerts(ctx context.Context, status string, limit int) ([]SecurityAlert, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.event_id,e.event_type,e.severity,a.status,COALESCE(e.source_ip::text,''),
+		       e.subject_type,e.subject_id,e.metadata,e.created_at,
+		       a.acknowledged_at,COALESCE(a.acknowledged_by::text,''),a.note
+		FROM security_alerts a
+		JOIN security_events e ON e.id=a.event_id
+		WHERE ($1='all' OR a.status=$1)
+		ORDER BY CASE e.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+		         e.created_at DESC,e.id DESC
+		LIMIT $2`, status, limit)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	items := make([]SecurityAlert, 0, limit)
+	for rows.Next() {
+		var item SecurityAlert
+		var sourceIP, acknowledgedBy string
+		var metadata []byte
+		if err := rows.Scan(
+			&item.EventID,&item.EventType,&item.Severity,&item.Status,&sourceIP,
+			&item.SubjectType,&item.SubjectID,&metadata,&item.CreatedAt,
+			&item.AcknowledgedAt,&acknowledgedBy,&item.Note,
+		); err != nil { return nil, err }
+		if sourceIP != "" { value := sourceIP; item.SourceIP = &value }
+		if acknowledgedBy != "" { value := acknowledgedBy; item.AcknowledgedBy = &value }
+		item.Metadata = map[string]any{}
+		if len(metadata) > 0 {
+			if err := json.Unmarshal(metadata, &item.Metadata); err != nil { return nil, err }
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) AcknowledgeSecurityAlert(ctx context.Context, eventID int64, actor Principal, note string) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil { return err }
+	defer func(){ _ = tx.Rollback(ctx) }()
+
+	result, err := tx.Exec(ctx, `
+		UPDATE security_alerts
+		SET status='acknowledged',acknowledged_by=$2::uuid,acknowledged_at=now(),note=$3,updated_at=now()
+		WHERE event_id=$1 AND status='open'`, eventID, actor.UserID, note)
+	if err != nil { return err }
+	if result.RowsAffected() != 1 { return ErrNotFound }
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO admin_audit_events(actor_user_id,actor_role,action,target_type,target_id,reason)
+		VALUES($1::uuid,$2,'security_alert_acknowledged','security_event',$3,$4)`,
+		actor.UserID,strongestRole(actor),eventID,note); err != nil { return err }
+
+	return tx.Commit(ctx)
+}
+
 func (s *PostgresStore) SecuritySummary(ctx context.Context) (SecuritySummary, error) {
 	var result SecuritySummary
 	err := s.pool.QueryRow(ctx, `
