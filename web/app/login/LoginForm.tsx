@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { startEmailLogin, startYandexLogin } from '../../lib/api';
 import { rememberReturnTo } from '../../lib/returnTo';
+import { recordGrowthEvent } from '../../lib/growth';
 
 export function LoginForm() {
   const params = useSearchParams();
@@ -22,6 +23,7 @@ export function LoginForm() {
     setStatus('sending');
     setError('');
     try {
+      void recordGrowthEvent('login_started');
       await startEmailLogin(email);
       setStatus('sent');
     } catch (err) {
@@ -35,6 +37,7 @@ export function LoginForm() {
     setStatus('yandex');
     setError('');
     try {
+      void recordGrowthEvent('login_started');
       const authorizationURL = await startYandexLogin();
       window.location.assign(authorizationURL);
     } catch (err) {
