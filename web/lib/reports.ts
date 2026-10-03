@@ -2,7 +2,7 @@
 
 import { getAccessToken, refreshSession } from './api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 export type ReportTargetType = 'user' | 'message' | 'post' | 'group';
 export type ReportCategory = 'spam' | 'scam' | 'harassment' | 'threats' | 'illegal_content' | 'sexual_content' | 'impersonation' | 'malware' | 'other';
