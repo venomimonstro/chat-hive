@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { completeOnboarding, getProfile, Interest, listInterests } from '../../lib/api';
 import { takeReturnTo } from '../../lib/returnTo';
+import { recordGrowthEvent } from '../../lib/growth';
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -22,7 +23,8 @@ export function OnboardingForm() {
       .then(([items, profile]) => {
         setInterests(items);
         if (profile?.completed) {
-          router.replace(takeReturnTo('/'));
+          void recordGrowthEvent('signup_completed');
+      router.replace(takeReturnTo('/'));
           return;
         }
         if (profile) {
