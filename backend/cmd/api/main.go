@@ -18,6 +18,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/feed"
 	"github.com/venomimonstro/chat-hive/backend/internal/featureflags"
 	"github.com/venomimonstro/chat-hive/backend/internal/groups"
+	"github.com/venomimonstro/chat-hive/backend/internal/growth"
 	"github.com/venomimonstro/chat-hive/backend/internal/httpserver"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 	"github.com/venomimonstro/chat-hive/backend/internal/media"
@@ -69,6 +70,7 @@ func main() {
 	messagingService := messaging.NewService(messagingStore)
 	messagingHTTP := messaging.NewHTTPHandler(messagingService, identityService, logger)
 	reactionBatchHTTP := messaging.NewReactionBatchHTTPHandler(messaging.NewReactionBatchService(messagingStore), identityService, logger)
+	growthHTTP := growth.NewHTTPHandler(growth.NewStore(pool), identityService, logger)
 	groupStore := groups.NewPostgresStore(pool)
 	groupsHTTP := groups.NewHTTPHandler(groups.NewService(groupStore), identityService, logger)
 	groupModerationHTTP := groups.NewModerationHTTPHandler(groups.NewModerationService(groupStore), identityService, logger)
@@ -97,6 +99,7 @@ func main() {
 	app.Register(accountDataHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.Register(socialHTTP.Register)
+	app.Register(growthHTTP.Register)
 	app.Register(messagingHTTP.Register)
 	app.Register(reactionBatchHTTP.Register)
 	app.Register(groupsHTTP.Register)
