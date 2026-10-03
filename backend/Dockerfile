@@ -6,13 +6,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/chat-api ./cmd/api \
- && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/chat-migrate ./cmd/migrate
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/chat-migrate ./cmd/migrate \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/chat-adminctl ./cmd/adminctl
 
 FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=build /out/chat-api /chat-api
 COPY --from=build /out/chat-migrate /chat-migrate
+COPY --from=build /out/chat-adminctl /chat-adminctl
 COPY --from=build /src/migrations /migrations
 USER 65532:65532
 EXPOSE 8080
