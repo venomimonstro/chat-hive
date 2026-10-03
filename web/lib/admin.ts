@@ -29,6 +29,21 @@ export type SecurityEvent = {
   created_at: string;
 };
 export type SecurityCounter = { key: string; count: number };
+export type SecurityAlert = {
+  event_id: number;
+  event_type: string;
+  severity: 'high' | 'critical';
+  status: 'open' | 'acknowledged' | 'resolved';
+  source_ip?: string;
+  subject_type: string;
+  subject_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  acknowledged_at?: string;
+  acknowledged_by?: string;
+  note: string;
+};
+
 export type SecuritySummary = {
   critical_15m: number;
   high_15m: number;
@@ -82,6 +97,26 @@ export async function listSecurityEvents(severity = ''): Promise<SecurityEvent[]
   if (!response.ok) throw new Error('Не удалось загрузить security events');
   const payload = await response.json() as { items: SecurityEvent[] };
   return payload.items;
+}
+
+export async function listSecurityAlerts(status = 'open'): Promise<SecurityAlert[]> {
+  const params = new URLSearchParams({ limit: '200', status });
+  const response = await call(`/api/v1/admin/security/alerts?${params.toString()}`);
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить security alerts');
+  const payload = await response.json() as { items: SecurityAlert[] };
+  return payload.items;
+}
+
+export async function acknowledgeSecurityAlert(eventId: number, note: string) {
+  const response = await call(`/api/v1/admin/security/alerts/${eventId}/ack`, {
+    method: 'POST',
+    body: JSON.stringify({ note })
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? 'Не удалось подтвердить security alert');
+  }
 }
 
 export async function getSecuritySummary(): Promise<SecuritySummary> {
