@@ -247,7 +247,7 @@ func (h *HTTPHandler) setRefreshCookie(w http.ResponseWriter, token string, expi
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Expires:  expiry,
 		MaxAge:   maxAgeUntil(expiry),
 	})
@@ -260,7 +260,7 @@ func (h *HTTPHandler) clearRefreshCookie(w http.ResponseWriter) {
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Expires:  time.Unix(1, 0),
 		MaxAge:   -1,
 	})
