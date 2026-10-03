@@ -110,6 +110,25 @@ export default function SecurityAdminPage() {
       <section className="adminContent">
         <header className="adminHeader"><div><span>SECURITY PLANE</span><h1>Security events</h1></div><strong>{summary?.critical_15m ?? 0}</strong></header>
 
+        <section className="adminOperationalControls" aria-label="Operational controls">
+          <div className="adminAlertQueueHeader">
+            <div><span>OPERATIONAL CONTROLS</span><h2>Public feature controls</h2></div>
+            <strong>{flags.filter((flag) => !flag.enabled).length}</strong>
+          </div>
+          <p className="adminNotice">Управление публичными и нагрузочными функциями. Контур личных сообщений здесь не управляется.</p>
+          <div className="adminFlagGrid">
+            {flags.map((flag) => (
+              <Surface className={`adminFlagItem ${flag.enabled ? '' : 'isDisabled'}`} key={flag.key}>
+                <div><strong>{flag.key}</strong><span>{flag.enabled ? 'ON' : 'OFF'}</span></div>
+                <p>{flag.reason || 'Штатный режим.'}</p>
+                <button type="button" disabled={changingFlag === flag.key} onClick={() => void changeFlag(flag)}>
+                  {changingFlag === flag.key ? 'Применяем…' : flag.enabled ? 'Приостановить' : 'Включить'}
+                </button>
+              </Surface>
+            ))}
+          </div>
+        </section>
+
         <section className="adminAlertQueue" aria-label="Открытые security alerts">
           <div className="adminAlertQueueHeader">
             <div><span>INCIDENT QUEUE</span><h2>Open alerts</h2></div>
