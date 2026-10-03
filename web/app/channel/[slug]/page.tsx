@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { GrowthView } from '../../../components/GrowthView';
 import { ChannelClient } from './ChannelClient';
 
 const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
@@ -38,5 +39,5 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ChannelPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  return <ChannelClient slug={slug} />;
+  return <><GrowthView objectType="channel" objectId={slug} /><ChannelClient slug={slug} /></>;
 }
