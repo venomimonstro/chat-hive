@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { GrowthView } from '../../../components/GrowthView';
 import { PostClient } from './PostClient';
 
 const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
@@ -52,5 +53,5 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <PostClient postId={id} />;
+  return <><GrowthView objectType="post" objectId={id} /><PostClient postId={id} /></>;
 }
