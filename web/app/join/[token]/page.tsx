@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { GrowthView } from '../../../components/GrowthView';
 import { JoinClient } from './JoinClient';
 
 const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
@@ -57,5 +58,5 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
 }
 
 export default function JoinGroupPage() {
-  return <JoinClient />;
+  return <><GrowthView objectType="group_invite" objectId="" /><JoinClient /></>;
 }
