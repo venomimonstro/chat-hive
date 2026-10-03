@@ -9,13 +9,18 @@ import (
 	"time"
 )
 
+type OperationalGate interface {
+	Enabled(ctx context.Context, key string) (bool, error)
+}
+
 type Server struct {
-	logger        *slog.Logger
-	mux           *http.ServeMux
-	readiness     func(context.Context) error
-	allowedOrigin string
-	limiter       *RateLimiter
-	securitySink  SecurityEventSink
+	logger          *slog.Logger
+	mux             *http.ServeMux
+	readiness       func(context.Context) error
+	allowedOrigin   string
+	limiter         *RateLimiter
+	securitySink    SecurityEventSink
+	operationalGate OperationalGate
 }
 
 type healthResponse struct {
@@ -33,10 +38,12 @@ func (s *Server) Register(register func(*http.ServeMux)) { register(s.mux) }
 func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness = check }
 func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
 func (s *Server) SetSecurityEventSink(sink SecurityEventSink) { s.securitySink = sink }
+func (s *Server) SetOperationalGate(gate OperationalGate) { s.operationalGate = gate }
 
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
 	handler = bodyLimitMiddleware(handler)
+	handler = operationalGateMiddleware(s.operationalGate, s.logger, handler)
 	handler = rateLimitMiddleware(s.limiter, s.securitySink, handler)
 	handler = corsMiddleware(s.allowedOrigin, handler)
 	handler = securityHeaders(handler)
@@ -65,6 +72,59 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"service": "chat-api", "version": "v1"})
 	})
+}
+
+func operationalGateMiddleware(gate OperationalGate, logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gate == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		key := operationalFlagForRequest(r)
+		if key == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 750*time.Millisecond)
+		enabled, err := gate.Enabled(ctx, key)
+		cancel()
+		if err != nil {
+			logger.Warn("operational flag lookup failed", "key", key, "error", err)
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !enabled {
+			w.Header().Set("Retry-After", "30")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": map[string]string{
+					"code": "feature_temporarily_disabled",
+					"message": "This feature is temporarily unavailable",
+				},
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func operationalFlagForRequest(r *http.Request) string {
+	path := r.URL.Path
+	switch {
+	case r.Method == http.MethodGet && path == "/api/v1/feed":
+		return "feed.enabled"
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/api/v1/discovery/"):
+		return "discovery.enabled"
+	case r.Method == http.MethodPost && path == "/api/v1/posts":
+		return "posting.enabled"
+	case r.Method == http.MethodPost && path == "/api/v1/communities":
+		return "community_creation.enabled"
+	case r.Method == http.MethodPost && path == "/api/v1/channels":
+		return "channel_creation.enabled"
+	case r.Method == http.MethodPost && path == "/api/v1/media/images":
+		return "media_upload.enabled"
+	default:
+		return ""
+	}
 }
 
 func corsMiddleware(allowedOrigin string, next http.Handler) http.Handler {
