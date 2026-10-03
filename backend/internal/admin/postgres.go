@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,7 +128,7 @@ func (s *PostgresStore) AcknowledgeSecurityAlert(ctx context.Context, eventID in
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO admin_audit_events(actor_user_id,actor_role,action,target_type,target_id,reason)
 		VALUES($1::uuid,$2,'security_alert_acknowledged','security_event',$3,$4)`,
-		actor.UserID,strongestRole(actor),eventID,note); err != nil { return err }
+		actor.UserID,strongestRole(actor),strconv.FormatInt(eventID,10),note); err != nil { return err }
 
 	return tx.Commit(ctx)
 }
