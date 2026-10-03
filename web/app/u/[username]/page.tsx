@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { GrowthView } from '../../../components/GrowthView';
 import { ProfileClient } from './ProfileClient';
 
 const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
@@ -44,5 +45,5 @@ export async function generateMetadata({ params }: { params: Promise<{ username:
 
 export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
-  return <ProfileClient username={username} />;
+  return <><GrowthView objectType="profile" objectId={username} /><ProfileClient username={username} /></>;
 }
