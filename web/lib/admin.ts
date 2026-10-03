@@ -44,6 +44,18 @@ export type SecurityAlert = {
   note: string;
 };
 
+export type RuntimeSnapshot = {
+  realtime_connections: number;
+  realtime_published: number;
+  realtime_dropped: number;
+  db_acquired: number;
+  db_idle: number;
+  db_max: number;
+  db_acquire_count: number;
+  db_acquire_duration_ms: number;
+  generated_at: string;
+};
+
 export type PlatformFlag = {
   key: string;
   enabled: boolean;
@@ -132,6 +144,13 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
   if (response.status === 404) throw new Error('Access denied');
   if (!response.ok) throw new Error('Не удалось загрузить security summary');
   return response.json() as Promise<SecuritySummary>;
+}
+
+export async function getRuntimeSnapshot(): Promise<RuntimeSnapshot> {
+  const response = await call('/api/v1/admin/ops/runtime');
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить runtime metrics');
+  return response.json() as Promise<RuntimeSnapshot>;
 }
 
 export async function listPlatformFlags(): Promise<PlatformFlag[]> {
