@@ -82,8 +82,8 @@ services:
         condition: service_completed_successfully
       media-init:
         condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
     volumes:
       - media:/var/lib/chat/media
     networks: [edge, data]
@@ -98,13 +98,36 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-    ports:
-      - "127.0.0.1:3000:3000"
+      CHAT_INTERNAL_API_BASE_URL: http://api:8080
+    expose:
+      - "3000"
     networks: [edge]
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1770
     cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      CHAT_PUBLIC_HOST: ${CHAT_PUBLIC_HOST:?required}
+      CHAT_TLS_EMAIL: ${CHAT_TLS_EMAIL:?required}
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    networks: [edge]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
     security_opt: ["no-new-privileges:true"]
 
 networks:
@@ -117,3 +140,5 @@ volumes:
   redisdata:
   natsdata:
   media:
+  caddydata:
+  caddyconfig:
