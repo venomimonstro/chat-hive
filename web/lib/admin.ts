@@ -44,6 +44,14 @@ export type SecurityAlert = {
   note: string;
 };
 
+export type PlatformFlag = {
+  key: string;
+  enabled: boolean;
+  reason: string;
+  updated_by?: string;
+  updated_at: string;
+};
+
 export type SecuritySummary = {
   critical_15m: number;
   high_15m: number;
@@ -124,6 +132,25 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
   if (response.status === 404) throw new Error('Access denied');
   if (!response.ok) throw new Error('Не удалось загрузить security summary');
   return response.json() as Promise<SecuritySummary>;
+}
+
+export async function listPlatformFlags(): Promise<PlatformFlag[]> {
+  const response = await call('/api/v1/admin/ops/flags');
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить operational controls');
+  const payload = await response.json() as { items: PlatformFlag[] };
+  return payload.items;
+}
+
+export async function setPlatformFlag(key: string, enabled: boolean, reason: string) {
+  const response = await call(`/api/v1/admin/ops/flags/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled, reason })
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? 'Не удалось изменить operational control');
+  }
 }
 
 export async function decideModerationCase(caseId: string, decision: 'resolve' | 'dismiss', reason: string) {
