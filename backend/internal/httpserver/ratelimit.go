@@ -105,6 +105,8 @@ func rateLimitMiddleware(limiter *RateLimiter, sink SecurityEventSink, next http
 			rate, burst, bucketName = 3, 12, "message"
 		case r.URL.Path == "/api/v1/realtime/ticket":
 			rate, burst, bucketName = 1, 5, "realtime-ticket"
+		case r.URL.Path == "/api/v1/growth/events" && r.Method == http.MethodPost:
+			rate, burst, bucketName = 1, 10, "growth"
 		}
 		key := bucketName + ":" + ip
 		allowed, retryAfter := limiter.Allow(key, rate, burst)
