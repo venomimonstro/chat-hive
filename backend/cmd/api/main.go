@@ -86,6 +86,21 @@ func main() {
 
 	realtimeHub := realtime.NewHub()
 	realtimeHTTP := realtime.NewHTTPHandler(identityService, realtimeHub, logger, cfg.WebOrigin)
+	adminHTTP.SetRuntimeSnapshot(func() admin.RuntimeSnapshot {
+		realtimeMetrics := realtimeHub.Metrics()
+		dbStats := pool.Stat()
+		return admin.RuntimeSnapshot{
+			RealtimeConnections: realtimeMetrics.Connections,
+			RealtimePublished: realtimeMetrics.Published,
+			RealtimeDropped: realtimeMetrics.Dropped,
+			DBAcquired: dbStats.AcquiredConns(),
+			DBIdle: dbStats.IdleConns(),
+			DBMax: dbStats.MaxConns(),
+			DBAcquireCount: dbStats.AcquireCount(),
+			DBAcquireDurationMS: dbStats.AcquireDuration().Milliseconds(),
+			GeneratedAt: time.Now().UTC(),
+		}
+	})
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
 	go realtime.NewListener(pool, realtimeHub, logger).Run(runtimeCtx)
