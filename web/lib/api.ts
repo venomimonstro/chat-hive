@@ -1,6 +1,6 @@
 'use client';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 const ACCESS_KEY = 'chat_access_token';
 
 type SessionPayload = {
