@@ -45,8 +45,8 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 03 | Identity: email magic-link, session rotation/revocation, Yandex ID, SMTP, passkeys | IN PROGRESS |
 | 04 | Onboarding: username, profile, interests | DONE |
 | 05 | Profiles and social graph | IN PROGRESS |
-| 06 | Realtime gateway | IN PROGRESS |
-| 07 | Direct messaging core | IN PROGRESS |
+| 06 | Realtime gateway | DONE |
+| 07 | Direct messaging core | DONE |
 | 08 | Reliable messaging/offline outbox/idempotency | DONE |
 | 09 | Secure image/media pipeline | DONE |
 | 10 | Groups | DONE |
@@ -60,7 +60,7 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 18 | Stranger requests + anti-spam | DONE |
 | 19 | Moderation core | DONE |
 | 20 | Admin moderation console + RBAC | DONE |
-| 21 | Security plane/detection | IN PROGRESS |
+| 21 | Security plane/detection | DONE |
 | 22 | Trust center / active sessions | DONE |
 | 23 | Offline + low-data modes | DONE |
 | 24 | Public web + invitation growth loops | IN PROGRESS |
@@ -145,7 +145,7 @@ Report flow is `Report → Case → Decision → Enforcement`, not direct user-t
 
 Append-only `security_events` storage is active. Producers currently cover session creation/revocation, refresh-token replay and aggregated rate-limit spikes. Rate-limit events are deduplicated to at most one event per bucket/IP/minute so an attacker cannot turn detection into a database write DoS. No message content is stored in these technical events.
 
-Remaining: richer admin anomaly correlation, alert delivery/operational severity routing and multi-node/distributed rate limiting when architecture becomes multi-node.
+High/critical security events are routed by a database trigger into an operational alert queue. Security/owner roles can acknowledge alerts with a mandatory note; acknowledgement is audited. Runtime operational controls can temporarily pause Feed, Discovery, new Posts, Community creation, Channel creation or Media upload without disabling Messaging. Each flag change writes both append-only admin audit and security events. Multi-node distributed rate limiting/correlation remains a future scale-out task.
 
 ### Offline / weak network
 
@@ -189,15 +189,15 @@ DR scripts create integrity-checked PostgreSQL custom-format backups and media a
 
 ### Sprint 06–07
 
-- Wire `chat:realtime` events into immediate messenger refresh without removing REST recovery.
-- Add realtime connection/slow-client metrics.
-- Reduce polling only after reconnect/load validation.
+Functional realtime and messaging scope is complete: `chat:realtime` triggers immediate chat/list synchronization, Hub metrics track active connections/published/dropped events, and REST remains the recovery path. Polling reduction remains a measured Sprint 25 optimization after reconnect/load validation, not a correctness blocker.
 
 ### Sprint 21 / 26
 
-- Admin/security anomaly correlation and alert routing.
+Sprint 21 single-node Security Plane is functionally complete: append-only events, rate-limit/session producers, high/critical alert routing, acknowledgement workflow, admin audit, security summary and operational public-feature controls are implemented.
+
+Remaining Sprint 26/deployment work:
 - Production secrets manager integration in deployment environment.
-- Production network segmentation/reverse proxy configuration.
+- Verify production reverse proxy/network segmentation on the target host.
 - Independent pentest remains a mandatory Public Beta gate.
 
 ### Sprint 24
@@ -281,4 +281,4 @@ A feature is not DONE until all applicable items are satisfied:
 
 ## Current next action
 
-Finish realtime-driven messenger refresh and realtime metrics, then complete passkey/shared auth boundary and Security Plane alerting. In parallel, the deployment environment must generate the frontend lockfile and execute clean migrations, load tests and restore drills before Sprint 28 can start.
+Complete the remaining Sprint 03 passkey dependency lock only through a reproducible Go module update, then finish Sprint 24 acquisition analytics/share funnel. In parallel, the deployment environment must generate the frontend npm lockfile and execute the release gate, clean migrations, load tests and restore drills before Sprint 28 can start.
