@@ -1,105 +1,61 @@
-'use client';
+import type { Metadata } from 'next';
+import { JoinClient } from './JoinClient';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { getCurrentSession, getGroupInvitePreview, Group, GroupInvitePreview, joinGroupByInvite } from '../../../lib/api';
-import { rememberReturnTo } from '../../../lib/returnTo';
-import '../../welcome/welcome.css';
+const API_BASE = process.env.CHAT_INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+
+type InvitePreview = {
+  title: string;
+  description?: string;
+  members_count: number;
+};
+
+async function getInvite(token: string): Promise<InvitePreview | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/groups/invites/${encodeURIComponent(token)}/preview`, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    return response.json() as Promise<InvitePreview>;
+  } catch {
+    return null;
+  }
+}
+
+function descriptionOf(invite: InvitePreview) {
+  const text = (invite.description ?? '').replace(/\s+/g, ' ').trim();
+  if (text) return text.length > 180 ? `${text.slice(0, 177)}…` : text;
+  return `Присоединяйтесь к группе «${invite.title}» в CHAT · ${invite.members_count} участников`;
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const { token } = await params;
+  const invite = await getInvite(token);
+  if (!invite) {
+    return {
+      title: 'Приглашение в CHAT',
+      description: 'Приглашение в группу CHAT',
+      robots: { index: false, follow: false }
+    };
+  }
+  const description = descriptionOf(invite);
+  return {
+    title: `${invite.title} — приглашение в CHAT`,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: {
+      type: 'website',
+      title: `${invite.title} — CHAT`,
+      description
+    },
+    twitter: {
+      card: 'summary',
+      title: `${invite.title} — CHAT`,
+      description
+    }
+  };
+}
 
 export default function JoinGroupPage() {
-  const params = useParams<{ token: string }>();
-  const token = typeof params.token === 'string' ? params.token : '';
-  const [preview, setPreview] = useState<GroupInvitePreview | null>(null);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [joining, setJoining] = useState(false);
-  const [joined, setJoined] = useState<Group | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    if (!token) {
-      setError('Некорректная ссылка приглашения');
-      setLoading(false);
-      return;
-    }
-    Promise.all([
-      getGroupInvitePreview(token),
-      getCurrentSession().catch(() => null)
-    ]).then(([invite, session]) => {
-      if (!active) return;
-      setPreview(invite);
-      setAuthenticated(Boolean(session));
-    }).catch((err) => {
-      if (!active) return;
-      setError(err instanceof Error ? err.message : 'Приглашение недействительно или истекло');
-    }).finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, [token]);
-
-  function loginAndReturn() {
-    const path = `/join/${encodeURIComponent(token)}`;
-    rememberReturnTo(path);
-    window.location.assign('/login');
-  }
-
-  async function join() {
-    if (!token || joining) return;
-    if (!authenticated) {
-      loginAndReturn();
-      return;
-    }
-    setJoining(true);
-    setError('');
-    try {
-      const group = await joinGroupByInvite(token);
-      setJoined(group);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось вступить в группу');
-    } finally {
-      setJoining(false);
-    }
-  }
-
-  return (
-    <main className="welcomePage">
-      <header className="welcomeHeader">
-        <a className="welcomeBrand" href="/welcome">CHAT</a>
-        <nav><a className="welcomeLink" href="/welcome">О CHAT</a>{!authenticated ? <a className="welcomeButton welcomeButtonSmall" href="/login">Войти</a> : null}</nav>
-      </header>
-
-      <section className="inviteLanding">
-        <div className="inviteCard">
-          <span className="welcomeEyebrow">ПРИГЛАШЕНИЕ В CHAT</span>
-          {loading ? <><h1>Проверяем приглашение…</h1><p>Это займёт секунду.</p></> : null}
-          {!loading && error && !preview ? (
-            <>
-              <h1>Ссылка больше не работает</h1>
-              <p>{error}</p>
-              <a className="welcomeButton" href="/welcome">Открыть CHAT</a>
-            </>
-          ) : null}
-          {!loading && preview && !joined ? (
-            <>
-              <h1>{preview.title}</h1>
-              <p>{preview.description || 'Группа для общения в CHAT.'}</p>
-              <div className="inviteMeta"><span>{preview.members_count} участников</span><span>Приватная переписка не показывается до вступления</span></div>
-              {error ? <div className="inviteError" role="alert">{error}</div> : null}
-              <button className="welcomeButton inviteAction" type="button" disabled={joining} onClick={() => void join()}>
-                {joining ? 'Вступаем…' : authenticated ? 'Вступить в группу' : 'Войти и вступить'}
-              </button>
-              {!authenticated ? <p className="inviteHint">Аккаунт создаётся по email. После входа вы вернётесь прямо сюда.</p> : null}
-            </>
-          ) : null}
-          {joined ? (
-            <>
-              <h1>Вы в группе</h1>
-              <p>«{joined.title}» теперь находится среди ваших чатов.</p>
-              <a className="welcomeButton" href={`/?chat=${encodeURIComponent(joined.chat_id)}`}>Открыть чат</a>
-            </>
-          ) : null}
-        </div>
-      </section>
-    </main>
-  );
+  return <JoinClient />;
 }
