@@ -62,6 +62,23 @@ export default function SecurityAdminPage() {
     }
   }
 
+  async function changeFlag(flag: PlatformFlag) {
+    const nextEnabled = !flag.enabled;
+    const reason = window.prompt(`Причина изменения ${flag.key}`);
+    if (!reason?.trim()) return;
+    setChangingFlag(flag.key);
+    setError('');
+    try {
+      await setPlatformFlag(flag.key, nextEnabled, reason.trim());
+      setFlags(await listPlatformFlags());
+      setAlerts(await listSecurityAlerts('open'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось изменить operational control');
+    } finally {
+      setChangingFlag('');
+    }
+  }
+
   async function acknowledge(alert: SecurityAlert) {
     const note = window.prompt('Кратко зафиксируйте, что проверено и какое действие принято:');
     if (!note?.trim()) return;
