@@ -75,6 +75,14 @@ type SecuritySummary struct {
 	GeneratedAt time.Time         `json:"generated_at"`
 }
 
+type PlatformFlag struct {
+	Key       string     `json:"key"`
+	Enabled   bool       `json:"enabled"`
+	Reason    string     `json:"reason"`
+	UpdatedBy *string    `json:"updated_by,omitempty"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 type AuditInput struct {
 	ActorUserID string
 	ActorRole   string
@@ -92,6 +100,8 @@ type Store interface {
 	ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error)
 	ListSecurityAlerts(ctx context.Context, status string, limit int) ([]SecurityAlert, error)
 	AcknowledgeSecurityAlert(ctx context.Context, eventID int64, actor Principal, note string) error
+	ListPlatformFlags(ctx context.Context) ([]PlatformFlag, error)
+	SetPlatformFlag(ctx context.Context, key string, enabled bool, actor Principal, reason string) error
 	SecuritySummary(ctx context.Context) (SecuritySummary, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
@@ -138,6 +148,28 @@ func (s *Service) AcknowledgeSecurityAlert(ctx context.Context, principal Princi
 	note = strings.TrimSpace(note)
 	if eventID <= 0 || len([]rune(note)) < 3 || len([]rune(note)) > 1000 { return ErrInvalid }
 	return s.store.AcknowledgeSecurityAlert(ctx, eventID, principal, note)
+}
+
+func (s *Service) ListPlatformFlags(ctx context.Context, principal Principal) ([]PlatformFlag, error) {
+	if !hasAnyRole(principal, "security", "system_admin", "owner") { return nil, ErrForbidden }
+	return s.store.ListPlatformFlags(ctx)
+}
+
+func (s *Service) SetPlatformFlag(ctx context.Context, principal Principal, key string, enabled bool, reason string) error {
+	if !hasAnyRole(principal, "security", "system_admin", "owner") { return ErrForbidden }
+	key = strings.TrimSpace(key)
+	reason = strings.TrimSpace(reason)
+	if !allowedPlatformFlag(key) || len([]rune(reason)) < 3 || len([]rune(reason)) > 1000 { return ErrInvalid }
+	return s.store.SetPlatformFlag(ctx, key, enabled, principal, reason)
+}
+
+func allowedPlatformFlag(key string) bool {
+	switch key {
+	case "feed.enabled", "discovery.enabled", "posting.enabled", "community_creation.enabled", "channel_creation.enabled", "media_upload.enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) GetSecuritySummary(ctx context.Context, principal Principal) (SecuritySummary, error) {
