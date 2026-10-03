@@ -28,6 +28,8 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/moderation/cases", h.listCases)
 	mux.HandleFunc("POST /api/v1/admin/moderation/cases/{case_id}/decision", h.decideCase)
 	mux.HandleFunc("GET /api/v1/admin/security/events", h.listSecurityEvents)
+	mux.HandleFunc("GET /api/v1/admin/security/alerts", h.listSecurityAlerts)
+	mux.HandleFunc("POST /api/v1/admin/security/alerts/{event_id}/ack", h.ackSecurityAlert)
 	mux.HandleFunc("GET /api/v1/admin/security/summary", h.securitySummary)
 }
 
@@ -57,6 +59,40 @@ func (h *HTTPHandler) listSecurityEvents(w http.ResponseWriter, r *http.Request)
 	if err != nil { h.domain(w, err); return }
 	h.audit(r, principal, "security_event_queue_view", "security_events", "", severity)
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) listSecurityAlerts(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "owner")
+	if !ok { return }
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	items, err := h.service.ListSecurityAlerts(r.Context(), principal, status, limit)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "security_alert_queue_view", "security_alerts", "", status)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) ackSecurityAlert(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "owner")
+	if !ok { return }
+	eventID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("event_id")), 10, 64)
+	if err != nil || eventID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_action", "Check action data")
+		return
+	}
+	var body struct { Note string `json:"note"` }
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
+		return
+	}
+	if err := h.service.AcknowledgeSecurityAlert(r.Context(), principal, eventID, body.Note); err != nil {
+		h.domain(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) securitySummary(w http.ResponseWriter, r *http.Request) {
