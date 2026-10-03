@@ -21,6 +21,7 @@ type Server struct {
 	limiter         *RateLimiter
 	securitySink    SecurityEventSink
 	operationalGate OperationalGate
+	degradedCheck   func() bool
 }
 
 type healthResponse struct {
@@ -39,10 +40,12 @@ func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness =
 func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
 func (s *Server) SetSecurityEventSink(sink SecurityEventSink) { s.securitySink = sink }
 func (s *Server) SetOperationalGate(gate OperationalGate) { s.operationalGate = gate }
+func (s *Server) SetDegradedCheck(check func() bool) { s.degradedCheck = check }
 
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
 	handler = bodyLimitMiddleware(handler)
+	handler = loadSheddingMiddleware(s.degradedCheck, handler)
 	handler = operationalGateMiddleware(s.operationalGate, s.logger, handler)
 	handler = rateLimitMiddleware(s.limiter, s.securitySink, handler)
 	handler = corsMiddleware(s.allowedOrigin, handler)
@@ -72,6 +75,40 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"service": "chat-api", "version": "v1"})
 	})
+}
+
+func loadSheddingMiddleware(degraded func() bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if degraded != nil && degraded() && isDeferrableRequest(r) {
+			w.Header().Set("Retry-After", "5")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": map[string]string{
+					"code": "temporarily_degraded",
+					"message": "This feature is temporarily limited to keep messaging available",
+				},
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isDeferrableRequest(r *http.Request) bool {
+	path := r.URL.Path
+	switch {
+	case r.Method == http.MethodGet && path == "/api/v1/feed":
+		return true
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/api/v1/discovery/"):
+		return true
+	case r.Method == http.MethodGet && path == "/api/v1/search":
+		return true
+	case r.Method == http.MethodPost && path == "/api/v1/media/images":
+		return true
+	case r.Method == http.MethodGet && (path == "/api/v1/communities" || path == "/api/v1/channels"):
+		return true
+	default:
+		return false
+	}
 }
 
 func operationalGateMiddleware(gate OperationalGate, logger *slog.Logger, next http.Handler) http.Handler {
