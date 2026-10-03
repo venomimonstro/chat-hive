@@ -13,7 +13,7 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN test -n "$NEXT_PUBLIC_API_BASE_URL" && npm run typecheck && npm run build
+RUN npm run typecheck && npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
