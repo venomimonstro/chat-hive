@@ -83,6 +83,18 @@ type PlatformFlag struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+type RuntimeSnapshot struct {
+	RealtimeConnections int64     `json:"realtime_connections"`
+	RealtimePublished   int64     `json:"realtime_published"`
+	RealtimeDropped     int64     `json:"realtime_dropped"`
+	DBAcquired          int32     `json:"db_acquired"`
+	DBIdle              int32     `json:"db_idle"`
+	DBMax               int32     `json:"db_max"`
+	DBAcquireCount      int64     `json:"db_acquire_count"`
+	DBAcquireDurationMS int64     `json:"db_acquire_duration_ms"`
+	GeneratedAt         time.Time `json:"generated_at"`
+}
+
 type AuditInput struct {
 	ActorUserID string
 	ActorRole   string
