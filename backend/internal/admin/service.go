@@ -48,6 +48,21 @@ type SecurityCounter struct {
 	Count int64  `json:"count"`
 }
 
+type SecurityAlert struct {
+	EventID       int64          `json:"event_id"`
+	EventType     string         `json:"event_type"`
+	Severity      string         `json:"severity"`
+	Status        string         `json:"status"`
+	SourceIP      *string        `json:"source_ip,omitempty"`
+	SubjectType   string         `json:"subject_type"`
+	SubjectID     string         `json:"subject_id"`
+	Metadata      map[string]any `json:"metadata"`
+	CreatedAt     time.Time      `json:"created_at"`
+	AcknowledgedAt *time.Time    `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy *string       `json:"acknowledged_by,omitempty"`
+	Note          string         `json:"note"`
+}
+
 type SecuritySummary struct {
 	Critical15m int64             `json:"critical_15m"`
 	High15m     int64             `json:"high_15m"`
@@ -75,6 +90,8 @@ type Store interface {
 	Principal(ctx context.Context, userID string) (Principal, error)
 	ListCases(ctx context.Context, statuses []string, limit int) ([]Case, error)
 	ListSecurityEvents(ctx context.Context, severity string, limit int) ([]SecurityEvent, error)
+	ListSecurityAlerts(ctx context.Context, status string, limit int) ([]SecurityAlert, error)
+	AcknowledgeSecurityAlert(ctx context.Context, eventID int64, actor Principal, note string) error
 	SecuritySummary(ctx context.Context) (SecuritySummary, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
@@ -105,6 +122,22 @@ func (s *Service) ListSecurityEvents(ctx context.Context, principal Principal, s
 	if severity != "" && severity != "info" && severity != "low" && severity != "medium" && severity != "high" && severity != "critical" { return nil, ErrInvalid }
 	if limit <= 0 { limit = 100 }; if limit > 500 { limit = 500 }
 	return s.store.ListSecurityEvents(ctx, severity, limit)
+}
+
+func (s *Service) ListSecurityAlerts(ctx context.Context, principal Principal, status string, limit int) ([]SecurityAlert, error) {
+	if !hasAnyRole(principal, "security", "owner") { return nil, ErrForbidden }
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" { status = "open" }
+	if status != "open" && status != "acknowledged" && status != "resolved" && status != "all" { return nil, ErrInvalid }
+	if limit <= 0 { limit = 100 }; if limit > 500 { limit = 500 }
+	return s.store.ListSecurityAlerts(ctx, status, limit)
+}
+
+func (s *Service) AcknowledgeSecurityAlert(ctx context.Context, principal Principal, eventID int64, note string) error {
+	if !hasAnyRole(principal, "security", "owner") { return ErrForbidden }
+	note = strings.TrimSpace(note)
+	if eventID <= 0 || len([]rune(note)) < 3 || len([]rune(note)) > 1000 { return ErrInvalid }
+	return s.store.AcknowledgeSecurityAlert(ctx, eventID, principal, note)
 }
 
 func (s *Service) GetSecuritySummary(ctx context.Context, principal Principal) (SecuritySummary, error) {
