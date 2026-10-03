@@ -2,7 +2,7 @@
 
 import { getAccessToken, refreshSession } from './api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 export type RealtimeEvent = {
   type: string;
@@ -32,7 +32,7 @@ async function issueTicket() {
 }
 
 function websocketURL(ticket: string) {
-  const base = new URL(API_BASE);
+  const base = new URL(API_BASE || window.location.origin);
   base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
   base.pathname = '/api/v1/realtime';
   base.search = new URLSearchParams({ ticket }).toString();
