@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Surface } from '../../../components/ui';
 import {
-  acknowledgeSecurityAlert, getAdminPrincipal, getSecuritySummary, listSecurityAlerts,
-  listSecurityEvents, SecurityAlert, SecurityEvent, SecuritySummary
+  acknowledgeSecurityAlert, getAdminPrincipal, getSecuritySummary, listPlatformFlags, listSecurityAlerts,
+  listSecurityEvents, PlatformFlag, SecurityAlert, SecurityEvent, SecuritySummary, setPlatformFlag
 } from '../../../lib/admin';
 
 const FILTERS = ['', 'critical', 'high', 'medium', 'low', 'info'] as const;
@@ -20,6 +20,8 @@ export default function SecurityAdminPage() {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
+  const [flags, setFlags] = useState<PlatformFlag[]>([]);
+  const [changingFlag, setChangingFlag] = useState('');
   const [severity, setSeverity] = useState('');
   const [selected, setSelected] = useState<SecurityEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,14 +35,16 @@ export default function SecurityAdminPage() {
       if (!principal) { router.replace('/'); return; }
       if (!principal.roles.some((role) => role === 'security' || role === 'owner')) { router.replace('/admin/moderation'); return; }
       setRoles(principal.roles);
-      const [items, openAlerts, securitySummary] = await Promise.all([
+      const [items, openAlerts, securitySummary, platformFlags] = await Promise.all([
         listSecurityEvents(''),
         listSecurityAlerts('open'),
-        getSecuritySummary()
+        getSecuritySummary(),
+        listPlatformFlags()
       ]);
       setEvents(items);
       setAlerts(openAlerts);
       setSummary(securitySummary);
+      setFlags(platformFlags);
     } catch (err) {
       if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
       setError(err instanceof Error ? err.message : 'Не удалось загрузить Security Plane');
