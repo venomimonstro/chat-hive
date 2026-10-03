@@ -31,6 +31,8 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/security/alerts", h.listSecurityAlerts)
 	mux.HandleFunc("POST /api/v1/admin/security/alerts/{event_id}/ack", h.ackSecurityAlert)
 	mux.HandleFunc("GET /api/v1/admin/security/summary", h.securitySummary)
+	mux.HandleFunc("GET /api/v1/admin/ops/flags", h.listPlatformFlags)
+	mux.HandleFunc("PUT /api/v1/admin/ops/flags/{key}", h.setPlatformFlag)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +104,36 @@ func (h *HTTPHandler) securitySummary(w http.ResponseWriter, r *http.Request) {
 	if err != nil { h.domain(w, err); return }
 	h.audit(r, principal, "security_summary_view", "security_summary", "", "")
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *HTTPHandler) listPlatformFlags(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	if !ok { return }
+	items, err := h.service.ListPlatformFlags(r.Context(), principal)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "platform_feature_flags_view", "feature_flags", "", "")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) setPlatformFlag(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	if !ok { return }
+	var body struct {
+		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
+		return
+	}
+	if err := h.service.SetPlatformFlag(r.Context(), principal, r.PathValue("key"), body.Enabled, body.Reason); err != nil {
+		h.domain(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
