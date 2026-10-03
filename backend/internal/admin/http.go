@@ -14,13 +14,18 @@ import (
 )
 
 type HTTPHandler struct {
-	service *Service
-	guard   *authhttp.Guard
-	logger  *slog.Logger
+	service         *Service
+	guard           *authhttp.Guard
+	logger          *slog.Logger
+	runtimeSnapshot func() RuntimeSnapshot
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
 	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
+}
+
+func (h *HTTPHandler) SetRuntimeSnapshot(provider func() RuntimeSnapshot) {
+	h.runtimeSnapshot = provider
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -33,6 +38,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/security/summary", h.securitySummary)
 	mux.HandleFunc("GET /api/v1/admin/ops/flags", h.listPlatformFlags)
 	mux.HandleFunc("PUT /api/v1/admin/ops/flags/{key}", h.setPlatformFlag)
+	mux.HandleFunc("GET /api/v1/admin/ops/runtime", h.runtime)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +140,18 @@ func (h *HTTPHandler) setPlatformFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) runtime(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	if !ok { return }
+	if h.runtimeSnapshot == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_metrics_unavailable", "Runtime metrics unavailable")
+		return
+	}
+	snapshot := h.runtimeSnapshot()
+	h.audit(r, principal, "runtime_metrics_view", "runtime_metrics", "", "")
+	writeJSON(w, http.StatusOK, snapshot)
 }
 
 func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
