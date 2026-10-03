@@ -63,7 +63,7 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 21 | Security plane/detection | DONE |
 | 22 | Trust center / active sessions | DONE |
 | 23 | Offline + low-data modes | DONE |
-| 24 | Public web + invitation growth loops | IN PROGRESS |
+| 24 | Public web + invitation growth loops | DONE |
 | 25 | Performance/load profiling | IN PROGRESS |
 | 26 | Security hardening + independent pentest gate | IN PROGRESS |
 | 27 | Backup/disaster recovery validation | IN PROGRESS |
@@ -166,8 +166,11 @@ Migration audit fixed duplicate migration versions and the `security_events.sess
 Operational artefacts now include:
 - `docs/SECURITY_INCIDENT_RUNBOOK.md`
 - `docs/RELEASE_CHECKLIST.md`
+- `docs/PRODUCTION_DEPLOYMENT.md`
 - `ops/release/check.sh`
 - `docs/DISASTER_RECOVERY.md`
+
+Production uses a single Caddy HTTPS ingress. Browser API requests default to same-origin; API/Web containers are not directly published, while PostgreSQL/Redis/NATS remain on an internal network. An audited `chat-adminctl` CLI grants the initial admin role only to an existing verified CHAT email account.
 
 ### Performance / DR
 
@@ -202,8 +205,7 @@ Remaining Sprint 26/deployment work:
 
 ### Sprint 24
 
-- Public read/acquisition surfaces are implemented.
-- Remaining work: OpenGraph/server-rendered share metadata, acquisition analytics and measured creator/community migration funnel.
+DONE for MVP scope. Public profile/post/channel/community pages have server-rendered share metadata; invite links have privacy-safe OpenGraph metadata; login preserves validated internal return paths; and first-party acquisition events measure public view → login start → completed onboarding without external trackers or storing invite tokens. Growth events have a dedicated rate budget. Creator/community migration experiments belong to Sprint 29 measured product iteration rather than blocking Alpha.
 
 ### Sprint 25
 
@@ -281,4 +283,4 @@ A feature is not DONE until all applicable items are satisfied:
 
 ## Current next action
 
-Complete the remaining Sprint 03 passkey dependency lock only through a reproducible Go module update, then finish Sprint 24 acquisition analytics/share funnel. In parallel, the deployment environment must generate the frontend npm lockfile and execute the release gate, clean migrations, load tests and restore drills before Sprint 28 can start.
+Complete the remaining Sprint 03 passkey dependency lock only through a reproducible Go module update. Sprint 24 is complete. Next prepare the Closed Alpha acceptance suite while the deployment environment generates the frontend npm lockfile and executes the release gate, clean migrations, load tests and restore drills before Sprint 28 can start.
