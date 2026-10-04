@@ -142,6 +142,8 @@ export default function ProductAdminPage() {
                   <div><dt>Login starts</dt><dd>{metrics.login_starts} · {percent(metrics.login_starts, metrics.public_views)}</dd></div>
                   <div><dt>Completed signup events</dt><dd>{metrics.signup_completed_events} · {percent(metrics.signup_completed_events, metrics.login_starts)}</dd></div>
                   <div><dt>Invite joins</dt><dd>{metrics.invite_joins}</dd></div>
+                  <div><dt>Community joins</dt><dd>{metrics.community_joins}</dd></div>
+                  <div><dt>Channel subscribes</dt><dd>{metrics.channel_subscribes}</dd></div>
                 </dl>
               </Surface>
               <Surface>
