@@ -6,6 +6,7 @@ import { AppShell } from '../../../components/AppShell';
 import { Button, Surface } from '../../../components/ui';
 import { DeviceSession, listSessions, revokeSession } from '../../../lib/api';
 import { deleteAccount, downloadAccountExport } from '../../../lib/accountData';
+import { deletePasskey, listPasskeys, PasskeyInfo, registerPasskey } from '../../../lib/passkeys';
 
 const DELETE_PHRASE = 'DELETE MY CHAT ACCOUNT';
 
@@ -29,12 +30,15 @@ export function SecuritySessions() {
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmation, setConfirmation] = useState('');
+  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [passkeyBusy, setPasskeyBusy] = useState('');
 
   async function load() {
     try {
-      const payload = await listSessions();
+      const [payload, passkeyItems] = await Promise.all([listSessions(), listPasskeys()]);
       setItems(payload.items);
       setCurrentId(payload.current_session_id);
+      setPasskeys(passkeyItems);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить устройства');
     } finally {
@@ -60,6 +64,35 @@ export function SecuritySessions() {
       setError(err instanceof Error ? err.message : 'Не удалось завершить сессию');
     } finally {
       setBusy('');
+    }
+  }
+
+  async function addPasskey() {
+    if (passkeyBusy) return;
+    setPasskeyBusy('add');
+    setError('');
+    try {
+      await registerPasskey();
+      setPasskeys(await listPasskeys());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось добавить passkey');
+    } finally {
+      setPasskeyBusy('');
+    }
+  }
+
+  async function removePasskey(passkey: PasskeyInfo) {
+    if (passkeyBusy) return;
+    if (!window.confirm('Удалить этот passkey? Вход по нему перестанет работать.')) return;
+    setPasskeyBusy(passkey.credential_id);
+    setError('');
+    try {
+      await deletePasskey(passkey.credential_id);
+      setPasskeys((current) => current.filter((item) => item.credential_id !== passkey.credential_id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить passkey');
+    } finally {
+      setPasskeyBusy('');
     }
   }
 
@@ -99,6 +132,27 @@ export function SecuritySessions() {
         </header>
 
         {error ? <div className="authError" role="alert">{error}</div> : null}
+
+        <div className="securitySectionHeader">
+          <div><h2>Passkeys</h2><p>Быстрый вход по биометрии или PIN устройства. Email остаётся резервным способом восстановления.</p></div>
+          <Button variant="secondary" disabled={passkeyBusy === 'add'} onClick={() => void addPasskey()}>
+            {passkeyBusy === 'add' ? 'Добавляем…' : 'Добавить passkey'}
+          </Button>
+        </div>
+        <div className="sessionList">
+          {passkeys.length ? passkeys.map((passkey) => (
+            <Surface className="sessionCard" key={passkey.credential_id}>
+              <div className="sessionIcon" aria-hidden="true">◇</div>
+              <div className="sessionCopy">
+                <div className="sessionTitle"><strong>{passkey.label || 'Passkey'}</strong></div>
+                <small>Добавлен {new Date(passkey.created_at).toLocaleString('ru-RU')}{passkey.last_used_at ? ` · использован ${new Date(passkey.last_used_at).toLocaleString('ru-RU')}` : ''}</small>
+              </div>
+              <Button variant="secondary" disabled={passkeyBusy === passkey.credential_id} onClick={() => void removePasskey(passkey)}>
+                {passkeyBusy === passkey.credential_id ? 'Удаляем…' : 'Удалить'}
+              </Button>
+            </Surface>
+          )) : <Surface className="securityDataCard"><div><strong>Passkey ещё не добавлен</strong><p>Добавьте passkey на доверенном устройстве, чтобы входить без ссылки из почты.</p></div></Surface>}
+        </div>
 
         <div className="securitySectionHeader">
           <div><h2>Ваши устройства</h2><p>Незнакомую сессию можно завершить сразу.</p></div>
