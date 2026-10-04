@@ -5,12 +5,13 @@ import { useSearchParams } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { startEmailLogin, startYandexLogin } from '../../lib/api';
 import { rememberReturnTo } from '../../lib/returnTo';
+import { loginWithPasskey } from '../../lib/passkeys';
 import { recordGrowthEvent } from '../../lib/growth';
 
 export function LoginForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'yandex'>('idle');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'yandex' | 'passkey'>('idle');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -19,7 +20,7 @@ export function LoginForm() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (status === 'sending' || status === 'yandex') return;
+    if (status !== 'idle') return;
     setStatus('sending');
     setError('');
     try {
@@ -32,8 +33,22 @@ export function LoginForm() {
     }
   }
 
+  async function passkeyLogin() {
+    if (status !== 'idle') return;
+    setStatus('passkey');
+    setError('');
+    try {
+      void recordGrowthEvent('login_started');
+      await loginWithPasskey();
+      window.location.assign('/onboarding');
+    } catch (err) {
+      setStatus('idle');
+      setError(err instanceof Error ? err.message : 'Вход с passkey временно недоступен');
+    }
+  }
+
   async function loginWithYandex() {
-    if (status === 'sending' || status === 'yandex') return;
+    if (status !== 'idle') return;
     setStatus('yandex');
     setError('');
     try {
@@ -78,12 +93,15 @@ export function LoginForm() {
           />
         </label>
         {error ? <div className="authError" role="alert">{error}</div> : null}
-        <Button type="submit" fullWidth disabled={status === 'sending' || status === 'yandex'}>
+        <Button type="submit" fullWidth disabled={status !== 'idle'}>
           {status === 'sending' ? 'Отправляем…' : 'Продолжить'}
         </Button>
       </form>
       <div className="authDivider"><span>или</span></div>
-      <Button variant="secondary" fullWidth disabled={status === 'sending' || status === 'yandex'} onClick={loginWithYandex}>
+      <Button variant="secondary" fullWidth disabled={status !== 'idle'} onClick={passkeyLogin}>
+        {status === 'passkey' ? 'Проверяем passkey…' : 'Войти с passkey'}
+      </Button>
+      <Button variant="secondary" fullWidth disabled={status !== 'idle'} onClick={loginWithYandex}>
         {status === 'yandex' ? 'Открываем Яндекс…' : 'Войти через Яндекс ID'}
       </Button>
       <small>Продолжая, вы принимаете правила сервиса и политику конфиденциальности.</small>
