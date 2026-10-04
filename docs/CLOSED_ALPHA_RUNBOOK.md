@@ -19,10 +19,7 @@ Do not deploy Alpha until all conditions below are satisfied:
 
 ## 2. Production network contract
 
-Public ingress may reach only:
-
-- HTTPS reverse proxy / web frontend;
-- HTTPS API and WebSocket paths through the same trusted edge.
+Public ingress may reach only the Caddy HTTPS edge. Caddy routes ordinary web traffic to Next.js and `/api/*` plus WebSocket traffic to the API service on the private edge network.
 
 The following services must not have public listeners:
 
@@ -51,15 +48,15 @@ CHAT_SMTP_USERNAME=<if required>
 CHAT_SMTP_PASSWORD=<secret>
 CHAT_SMTP_FROM=<verified sender>
 CHAT_MEDIA_ROOT=<persistent alpha media path>
-NEXT_PUBLIC_API_BASE_URL=https://<public-api-host>
-CHAT_INTERNAL_API_BASE_URL=http://<private-api-service>:8080
+NEXT_PUBLIC_API_BASE_URL=
+CHAT_INTERNAL_API_BASE_URL=http://api:8080
 ```
 
 Optional:
 
 ```text
 CHAT_YANDEX_CLIENT_ID=<client id>
-CHAT_YANDEX_REDIRECT_URL=https://<public-api-host>/api/v1/auth/yandex/callback
+CHAT_YANDEX_REDIRECT_URL=https://<public-web-host>/api/v1/auth/yandex/callback
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=<only after vetted Web Push sender is enabled>
 ```
 
