@@ -256,6 +256,12 @@ func (s *PostgresStore) SendText(ctx context.Context, input SendInput) (Message,
 	if err != nil {
 		return Message{}, false, err
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO growth_events(event_name,user_id)
+		VALUES('first_message',$1::uuid)
+		ON CONFLICT DO NOTHING`, input.UserID); err != nil {
+		return Message{}, false, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Message{}, false, err
 	}
