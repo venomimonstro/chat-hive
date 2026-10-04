@@ -35,6 +35,8 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/complete", h.completeEmail)
 	mux.HandleFunc("GET /api/v1/auth/yandex/start", h.startYandex)
 	mux.HandleFunc("GET /api/v1/auth/yandex/callback", h.completeYandex)
+	mux.HandleFunc("GET /api/v1/auth/passkeys", h.listPasskeys)
+	mux.HandleFunc("DELETE /api/v1/auth/passkeys/{credential_id}", h.deletePasskey)
 	mux.HandleFunc("POST /api/v1/auth/passkeys/register/begin", h.beginPasskeyRegistration)
 	mux.HandleFunc("POST /api/v1/auth/passkeys/register/finish/{ceremony_id}", h.finishPasskeyRegistration)
 	mux.HandleFunc("POST /api/v1/auth/passkeys/login/begin", h.beginPasskeyLogin)
@@ -140,6 +142,42 @@ func (h *HTTPHandler) redirectOAuthResult(w http.ResponseWriter, r *http.Request
 		target.RawQuery = query.Encode()
 	}
 	http.Redirect(w, r, target.String(), http.StatusSeeOther)
+}
+
+func (h *HTTPHandler) listPasskeys(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	session, ok := h.authenticateRequest(w, r)
+	if !ok { return }
+	items, err := h.passkeys.ListCredentials(r.Context(), session.UserID)
+	if err != nil {
+		h.logger.Error("list passkeys failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *HTTPHandler) deletePasskey(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	session, ok := h.authenticateRequest(w, r)
+	if !ok { return }
+	err := h.passkeys.DeleteCredential(r.Context(), session.UserID, r.PathValue("credential_id"))
+	if err != nil {
+		if errors.Is(err, ErrPasskeyUnavailable) {
+			writeAPIError(w, http.StatusNotFound, "passkey_not_found", "Passkey not found")
+			return
+		}
+		h.logger.Error("delete passkey failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
