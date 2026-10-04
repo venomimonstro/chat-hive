@@ -22,6 +22,7 @@ Do not commit any token, database URL or external report.
 The gate performs the full Closed Alpha technical gate and additionally blocks Beta when:
 
 - an active `owner` or `security` account has no passkey;
+- privileged Admin operations are not protected by passkey-authenticated session step-up;
 - an open high/critical security alert exists;
 - an open/reviewing critical moderation case exists;
 - the independent pentest evidence file is missing;
@@ -49,7 +50,7 @@ Store outside the public repository:
 - restore-drill output and measured RTO/RPO;
 - pentest report version and remediation status;
 - legal sign-off version/date;
-- active owner/security account list and passkey coverage;
+- active owner/security account list, passkey coverage and confirmation that sensitive Admin access was tested from both email and passkey sessions;
 - known non-blocking issues;
 - rollback owner and communication plan.
 
