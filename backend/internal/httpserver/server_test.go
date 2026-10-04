@@ -56,7 +56,7 @@ func TestCORSPreflightOnlyAllowsConfiguredOrigin(t *testing.T) {
 func TestRateLimiterRejectsBurst(t *testing.T) {
 	limiter := NewRateLimiter()
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	handler := rateLimitMiddleware(limiter, next)
+	handler := rateLimitMiddleware(limiter, nil, remoteIP, next)
 
 	var last *httptest.ResponseRecorder
 	for i := 0; i < 10; i++ {
