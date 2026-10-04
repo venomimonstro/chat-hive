@@ -42,7 +42,7 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 00 | Product/architecture/security source of truth | DONE |
 | 01 | Repository, local infrastructure, backend/frontend skeleton | DONE |
 | 02 | Design system and responsive application shell | DONE |
-| 03 | Identity: email magic-link, session rotation/revocation, Yandex ID, SMTP, passkeys | IN PROGRESS |
+| 03 | Identity: email magic-link, session rotation/revocation, Yandex ID, SMTP, passkeys | DONE |
 | 04 | Onboarding: username, profile, interests | DONE |
 | 05 | Profiles and social graph | DONE |
 | 06 | Realtime gateway | DONE |
@@ -79,7 +79,7 @@ Implemented: persistent email magic links, hashed one-time challenges, short-liv
 
 Security events now record session creation/revocation and refresh-token reuse; refresh replay revokes the affected session and writes the high-severity event in the same database transaction.
 
-Remaining before Sprint 03 can close: passkey/WebAuthn credentials and a shared authenticated HTTP boundary to remove repeated Bearer parsing.
+Sprint 03 is functionally complete. Passkeys use `go-webauthn/webauthn v0.12.1` with checked module sums, server-side one-time ceremonies, discoverable login, credential lifecycle management, clone-warning security alerts and ordinary CHAT sessions after assertion. Authenticated HTTP modules use the shared `authhttp.Guard`; only the Identity package keeps its internal bearer parser because it implements the auth boundary itself. Real-device WebAuthn remains an Alpha smoke requirement, not an implementation gap.
 
 ### Profiles / social graph
 
@@ -182,7 +182,7 @@ DR scripts create integrity-checked PostgreSQL custom-format backups and media a
 
 ### Sprint 03
 
-- Passkey/WebAuthn using a vetted maintained implementation; do not invent cryptography.
+DONE. Email magic-link, rotating/revocable sessions, Yandex ID, SMTP and discoverable Passkeys are implemented. Passkey registration is available only to an authenticated user; login does not require exposing email/username first. Security Center supports add/list/delete, while email remains an independent recovery path.
 - Shared auth middleware/boundary.
 
 ### Sprint 05
@@ -283,4 +283,4 @@ A feature is not DONE until all applicable items are satisfied:
 
 ## Current next action
 
-Complete the remaining Sprint 03 passkey dependency lock only through a reproducible Go module update. Sprint 24 is complete. Next prepare the Closed Alpha acceptance suite while the deployment environment generates the frontend npm lockfile and executes the release gate, clean migrations, load tests and restore drills before Sprint 28 can start.
+Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
