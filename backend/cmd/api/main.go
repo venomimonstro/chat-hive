@@ -61,6 +61,9 @@ func main() {
 	identityService := identity.NewService(store, sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
 	identityHTTP.SetClientIPResolver(clientIPResolver.Resolve)
+	passkeyService, err := identity.NewPasskeyService(store, identityService, cfg.WebOrigin)
+	if err != nil { logger.Error("passkey configuration failed", "error", err); os.Exit(1) }
+	identityHTTP.SetPasskeyService(passkeyService)
 	if cfg.YandexClientID != "" {
 		identityHTTP.SetYandexOAuth(identity.NewYandexOAuth(store, identity.YandexConfig{ClientID: cfg.YandexClientID, RedirectURL: cfg.YandexRedirectURL, WebCompleteURL: cfg.WebOrigin + "/auth/yandex-complete"}))
 	}
