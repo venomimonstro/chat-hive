@@ -121,6 +121,16 @@ async function call(path: string, init: RequestInit = {}) {
     headers.set('Authorization', `Bearer ${refreshed.access_token}`);
     response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
   }
+  if (response.status === 403) {
+    const payload = await response.clone().json().catch(() => null);
+    if (payload?.error?.code === 'passkey_required') {
+      if (typeof window !== 'undefined') {
+        const next = window.location.pathname + window.location.search;
+        window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+      }
+      throw new Error('Для привилегированного доступа войдите с passkey');
+    }
+  }
   return response;
 }
 
