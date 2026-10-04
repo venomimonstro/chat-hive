@@ -43,6 +43,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/ops/flags", h.listPlatformFlags)
 	mux.HandleFunc("PUT /api/v1/admin/ops/flags/{key}", h.setPlatformFlag)
 	mux.HandleFunc("GET /api/v1/admin/ops/runtime", h.runtime)
+	mux.HandleFunc("GET /api/v1/admin/product/metrics", h.productMetrics)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +157,16 @@ func (h *HTTPHandler) runtime(w http.ResponseWriter, r *http.Request) {
 	snapshot := h.runtimeSnapshot()
 	h.audit(r, principal, "runtime_metrics_view", "runtime_metrics", "", "")
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *HTTPHandler) productMetrics(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "owner")
+	if !ok { return }
+	days, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("days")))
+	metrics, err := h.service.GetProductMetrics(r.Context(), principal, days)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "product_metrics_view", "product_metrics", "", strconv.Itoa(metrics.WindowDays))
+	writeJSON(w, http.StatusOK, metrics)
 }
 
 func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
