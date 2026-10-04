@@ -6,12 +6,14 @@ const ACCESS_KEY = 'chat_access_token';
 type SessionPayload = {
   user_id: string;
   session_id: string;
+  auth_method: 'legacy' | 'email' | 'yandex' | 'passkey';
   access_token: string;
   access_expires_at: string;
 };
 
 export type DeviceSession = {
   session_id: string;
+  auth_method: 'legacy' | 'email' | 'yandex' | 'passkey';
   user_agent: string;
   last_ip: string;
   created_at: string;
@@ -166,7 +168,7 @@ export async function refreshSession(): Promise<SessionPayload | null> {
 export async function getCurrentSession() {
   const response = await request('/api/v1/auth/session');
   if (!response.ok) return null;
-  return response.json() as Promise<{ user_id: string; session_id: string; expires_at: string }>;
+  return response.json() as Promise<{ user_id: string; session_id: string; auth_method: 'legacy' | 'email' | 'yandex' | 'passkey'; expires_at: string }>;
 }
 
 export async function listSessions(): Promise<{ items: DeviceSession[]; current_session_id: string }> {
