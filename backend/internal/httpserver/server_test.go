@@ -69,3 +69,60 @@ func TestRateLimiterRejectsBurst(t *testing.T) {
 	if last == nil || last.Code != http.StatusTooManyRequests { t.Fatalf("expected burst to be rate limited, got %v", last) }
 	if last.Header().Get("Retry-After") == "" { t.Fatal("Retry-After header missing") }
 }
+
+
+func TestPressureGateHysteresis(t *testing.T) {
+	gate := NewPressureGate(85, 70)
+	if gate.Update(84, 100) { t.Fatal("must remain normal below high threshold") }
+	if !gate.Update(85, 100) { t.Fatal("must enter degraded mode at high threshold") }
+	if !gate.Update(80, 100) { t.Fatal("must stay degraded until low threshold") }
+	if gate.Update(70, 100) { t.Fatal("must recover at low threshold") }
+}
+
+func TestDeferrableRequestsNeverIncludeMessaging(t *testing.T) {
+	deferrable := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/feed"},
+		{http.MethodGet, "/api/v1/discovery/people"},
+		{http.MethodGet, "/api/v1/search"},
+		{http.MethodPost, "/api/v1/media/images"},
+		{http.MethodGet, "/api/v1/communities"},
+		{http.MethodGet, "/api/v1/channels"},
+	}
+	for _, tc := range deferrable {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		if !isDeferrableRequest(req) { t.Fatalf("expected deferrable: %s %s", tc.method, tc.path) }
+	}
+
+	messaging := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/chats"},
+		{http.MethodGet, "/api/v1/chats/abc/messages"},
+		{http.MethodPost, "/api/v1/chats/abc/messages"},
+		{http.MethodPost, "/api/v1/chats/abc/read"},
+		{http.MethodPost, "/api/v1/realtime/ticket"},
+	}
+	for _, tc := range messaging {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		if isDeferrableRequest(req) { t.Fatalf("messaging path must never be shed: %s %s", tc.method, tc.path) }
+	}
+}
+
+func TestLoadSheddingReturnsRetryable503(t *testing.T) {
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := loadSheddingMiddleware(func() bool { return true }, next)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/feed", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable { t.Fatalf("expected 503, got %d", res.Code) }
+	if nextCalled { t.Fatal("deferrable request reached downstream handler") }
+	if got := res.Header().Get("Retry-After"); got != "5" { t.Fatalf("expected Retry-After=5, got %q", got) }
+}
