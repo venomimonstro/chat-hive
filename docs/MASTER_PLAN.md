@@ -157,7 +157,7 @@ Public profile, public post permalink/replies/media, approved channels and appro
 
 ### Edge / security hardening
 
-Implemented: strict CORS allowlist, secure headers, no-store for API, panic recovery, request IDs, request telemetry, bounded single-node rate limiter with Retry-After, no trust of arbitrary forwarded client IP headers, WebSocket-safe telemetry handling, non-root scratch backend Docker image and dependency-locked websocket library.
+Implemented: strict CORS allowlist, secure headers, no-store for API, panic recovery, request IDs, request telemetry, bounded single-node rate limiter with Retry-After, WebSocket-safe telemetry handling, non-root scratch backend Docker image and dependency-locked websocket library. Behind production Caddy, client IP recovery is trusted-proxy aware: forwarded addresses are accepted only from the fixed Caddy peer `172.31.238.2/32`; direct users and the web container cannot spoof XFF for rate limits, auth abuse detection or admin audit.
 
 Production configuration is fail-closed: explicit database URL is required, development database credentials are rejected, web/magic-link/Yandex URLs require HTTPS, production SMTP is mandatory and example.com sender values are rejected.
 
