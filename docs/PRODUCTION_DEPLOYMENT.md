@@ -28,10 +28,7 @@ A real `web/package-lock.json` is mandatory.
 Run from `web/` in an environment with npm:
 
 ```sh
-npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-npm ci --ignore-scripts --no-audit --no-fund
-npm run typecheck
-npm run build
+bash ../ops/frontend/lock.sh
 ```
 
 Commit the generated lockfile. Do not hand-write it.
@@ -84,7 +81,7 @@ Also verify:
 
 ## 7. First owner bootstrap
 
-First create and verify a normal CHAT account by email.
+First create and verify a normal CHAT account by email. Before granting `owner` or `security`, sign in to that account and add at least one passkey in Security Center. Privileged roles cannot be granted without an existing passkey.
 
 Then run the audited CLI once:
 
@@ -98,6 +95,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml run --rm \
 Remove `CHAT_ADMIN_BOOTSTRAP_CONFIRM` immediately after use.
 
 The operation is stored in `admin_audit_events`.
+
+After the role is granted, sensitive owner/security Admin endpoints require a passkey-authenticated session. Email/Yandex sessions remain valid for ordinary CHAT usage and recovery, but cannot perform privileged Admin operations. Adding or deleting passkeys on a privileged account also requires an existing passkey-authenticated session.
 
 ## 8. Backup before every risky change
 
