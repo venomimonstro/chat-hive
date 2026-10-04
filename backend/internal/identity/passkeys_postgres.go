@@ -72,11 +72,22 @@ func (s *PostgresStore) ListPasskeyCredentials(ctx context.Context, userID strin
 func (s *PostgresStore) SavePasskeyCredential(ctx context.Context, userID string, credential webauthn.Credential) error {
 	raw, err := json.Marshal(credential)
 	if err != nil { return err }
-	_, err = s.pool.Exec(ctx, `
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil { return err }
+	defer func(){ _ = tx.Rollback(ctx) }()
+
+	result, err := tx.Exec(ctx, `
 		INSERT INTO passkey_credentials(credential_id,user_id,credential)
 		VALUES($1,$2::uuid,$3::jsonb)
 		ON CONFLICT (credential_id) DO NOTHING`, credential.ID,userID,raw)
-	return err
+	if err != nil { return err }
+	if result.RowsAffected()!=1 { return ErrPasskeyUnavailable }
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO security_events(event_type,severity,user_id,subject_type,subject_id)
+		VALUES('passkey_registered','info',$1::uuid,'user',$1)`, userID); err != nil { return err }
+
+	return tx.Commit(ctx)
 }
 
 func (s *PostgresStore) UpdatePasskeyCredential(ctx context.Context, userID string, credential webauthn.Credential) error {
@@ -171,10 +182,19 @@ func (s *PostgresStore) DeletePasskeyCredential(ctx context.Context, userID, enc
 	if encodedCredentialID == "" || len(encodedCredentialID) > 2048 { return ErrPasskeyUnavailable }
 	credentialID, err := base64.RawURLEncoding.DecodeString(encodedCredentialID)
 	if err != nil || len(credentialID) == 0 { return ErrPasskeyUnavailable }
-	result, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil { return err }
+	defer func(){ _ = tx.Rollback(ctx) }()
+
+	result, err := tx.Exec(ctx, `
 		DELETE FROM passkey_credentials
 		WHERE credential_id=$1 AND user_id=$2::uuid`, credentialID,userID)
 	if err != nil { return err }
 	if result.RowsAffected()!=1 { return ErrPasskeyUnavailable }
-	return nil
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO security_events(event_type,severity,user_id,subject_type,subject_id)
+		VALUES('passkey_deleted','medium',$1::uuid,'user',$1)`, userID); err != nil { return err }
+
+	return tx.Commit(ctx)
 }
