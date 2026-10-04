@@ -149,6 +149,7 @@ func (y *YandexOAuth) issueSession(ctx context.Context, userID, userAgent, reque
 	if err != nil { return SessionTokens{}, err }
 	tokens := SessionTokens{
 		UserID: userID,
+		AuthMethod: "yandex",
 		AccessToken: accessToken,
 		RefreshToken: refreshToken,
 		AccessExpiry: now.Add(15 * time.Minute),
@@ -156,6 +157,7 @@ func (y *YandexOAuth) issueSession(ctx context.Context, userID, userAgent, reque
 	}
 	sessionID, err := y.store.CreateSession(ctx, CreateSessionInput{
 		UserID: userID,
+		AuthMethod: "yandex",
 		AccessTokenHash: accessHash,
 		RefreshTokenHash: refreshHash,
 		UserAgent: truncate(userAgent, 512),
