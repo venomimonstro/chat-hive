@@ -16,6 +16,7 @@ import (
 var (
 	ErrPasskeyInvalidCeremony = errors.New("invalid or expired passkey ceremony")
 	ErrPasskeyUnavailable     = errors.New("passkey unavailable")
+	ErrPasskeyStepUp          = errors.New("passkey step-up required")
 )
 
 type PasskeyInfo struct {
@@ -164,6 +165,13 @@ func (s *PasskeyService) FinishLogin(ctx context.Context, ceremonyID string, r *
 	return s.identity.CreateSessionForUser(ctx, resolved.ID, userAgent, requestIP)
 }
 
+
+func (s *PasskeyService) AuthorizeCredentialManagement(ctx context.Context, userID, authMethod string) error {
+	privileged, err := s.store.IsPrivilegedPasskeyAccount(ctx, userID)
+	if err != nil { return err }
+	if privileged && authMethod != "passkey" { return ErrPasskeyStepUp }
+	return nil
+}
 
 func (s *PasskeyService) ListCredentials(ctx context.Context, userID string) ([]PasskeyInfo, error) {
 	return s.store.ListPasskeyInfo(ctx, userID)
