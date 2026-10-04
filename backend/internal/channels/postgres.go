@@ -78,7 +78,13 @@ func (s *PostgresStore) SetSubscription(ctx context.Context, userID, slug string
 	if err:=tx.QueryRow(ctx,`SELECT id::text,owner_id::text,moderation_status FROM channels WHERE slug=$1 FOR UPDATE`,slug).Scan(&channelID,&ownerID,&status);err!=nil{if errors.Is(err,pgx.ErrNoRows){return Channel{},ErrNotFound};return Channel{},err}
 	if status!="approved" && ownerID!=userID{return Channel{},ErrForbidden}
 	if enabled {
-		if _,err:=tx.Exec(ctx,`INSERT INTO channel_subscribers(channel_id,user_id) VALUES($1::uuid,$2::uuid) ON CONFLICT DO NOTHING`,channelID,userID);err!=nil{return Channel{},err}
+		result,err:=tx.Exec(ctx,`INSERT INTO channel_subscribers(channel_id,user_id) VALUES($1::uuid,$2::uuid) ON CONFLICT DO NOTHING`,channelID,userID)
+		if err!=nil{return Channel{},err}
+		if result.RowsAffected()==1 {
+			if _,err:=tx.Exec(ctx,`
+				INSERT INTO growth_events(event_name,user_id,object_type,object_id)
+				VALUES('channel_subscribe',$1::uuid,'channel',$2)`,userID,channelID);err!=nil{return Channel{},err}
+		}
 	} else {
 		if ownerID==userID{return Channel{},ErrForbidden}
 		if _,err:=tx.Exec(ctx,`DELETE FROM channel_subscribers WHERE channel_id=$1::uuid AND user_id=$2::uuid`,channelID,userID);err!=nil{return Channel{},err}
