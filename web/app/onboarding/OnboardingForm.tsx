@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
 import { completeOnboarding, getProfile, Interest, listInterests } from '../../lib/api';
 import { takeReturnTo } from '../../lib/returnTo';
-import { recordGrowthEvent } from '../../lib/growth';
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -57,7 +56,6 @@ export function OnboardingForm() {
         bio: bio.trim(),
         interests: selected
       });
-      void recordGrowthEvent('signup_completed');
       router.replace(takeReturnTo('/'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить профиль');
