@@ -142,6 +142,84 @@ func (h *HTTPHandler) redirectOAuthResult(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, target.String(), http.StatusSeeOther)
 }
 
+func (h *HTTPHandler) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	session, ok := h.authenticateRequest(w, r)
+	if !ok { return }
+
+	options, ceremonyID, err := h.passkeys.BeginRegistration(r.Context(), session.UserID)
+	if err != nil {
+		h.logger.Error("begin passkey registration failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ceremony_id": ceremonyID, "options": options})
+}
+
+func (h *HTTPHandler) finishPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	session, ok := h.authenticateRequest(w, r)
+	if !ok { return }
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	err := h.passkeys.FinishRegistration(r.Context(), session.UserID, r.PathValue("ceremony_id"), r)
+	if err != nil {
+		if errors.Is(err, ErrPasskeyInvalidCeremony) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_passkey_ceremony", "Passkey request expired. Try again")
+			return
+		}
+		h.logger.Warn("finish passkey registration failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusBadRequest, "invalid_passkey", "Passkey could not be verified")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) beginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	options, ceremonyID, err := h.passkeys.BeginLogin(r.Context())
+	if err != nil {
+		h.logger.Error("begin passkey login failed", "error", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ceremony_id": ceremonyID, "options": options})
+}
+
+func (h *HTTPHandler) finishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
+	if h.passkeys == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "passkeys_unavailable", "Passkeys are unavailable")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	tokens, err := h.passkeys.FinishLogin(
+		r.Context(),
+		r.PathValue("ceremony_id"),
+		r,
+		r.UserAgent(),
+		h.clientIP(r),
+	)
+	if err != nil {
+		if errors.Is(err, ErrPasskeyInvalidCeremony) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_passkey_ceremony", "Passkey request expired. Try again")
+			return
+		}
+		h.logger.Warn("finish passkey login failed", "error", err)
+		writeAPIError(w, http.StatusUnauthorized, "invalid_passkey", "Passkey could not be verified")
+		return
+	}
+	h.writeSessionTokens(w, tokens)
+}
+
 func (h *HTTPHandler) refreshSession(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("chat_refresh")
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
