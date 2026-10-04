@@ -2,9 +2,11 @@ package identity
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -141,4 +143,38 @@ func (s *PostgresStore) RecordPasskeyCloneWarning(ctx context.Context, userID st
 		       jsonb_build_object('credential_id',$3))`,
 		userID,sourceIP,fmt.Sprintf("%x",credentialID))
 	return err
+}
+
+
+func (s *PostgresStore) ListPasskeyInfo(ctx context.Context, userID string) ([]PasskeyInfo, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT credential_id,label,created_at,last_used_at
+		FROM passkey_credentials
+		WHERE user_id=$1::uuid
+		ORDER BY created_at DESC`, userID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+
+	items := make([]PasskeyInfo, 0, 4)
+	for rows.Next() {
+		var credentialID []byte
+		var item PasskeyInfo
+		if err := rows.Scan(&credentialID,&item.Label,&item.CreatedAt,&item.LastUsedAt); err != nil { return nil, err }
+		item.CredentialID = base64.RawURLEncoding.EncodeToString(credentialID)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) DeletePasskeyCredential(ctx context.Context, userID, encodedCredentialID string) error {
+	encodedCredentialID = strings.TrimSpace(encodedCredentialID)
+	if encodedCredentialID == "" || len(encodedCredentialID) > 2048 { return ErrPasskeyUnavailable }
+	credentialID, err := base64.RawURLEncoding.DecodeString(encodedCredentialID)
+	if err != nil || len(credentialID) == 0 { return ErrPasskeyUnavailable }
+	result, err := s.pool.Exec(ctx, `
+		DELETE FROM passkey_credentials
+		WHERE credential_id=$1 AND user_id=$2::uuid`, credentialID,userID)
+	if err != nil { return err }
+	if result.RowsAffected()!=1 { return ErrPasskeyUnavailable }
+	return nil
 }
