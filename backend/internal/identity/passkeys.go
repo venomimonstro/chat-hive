@@ -74,9 +74,14 @@ func (s *PasskeyService) BeginRegistration(ctx context.Context, userID string) (
 	if err != nil {
 		return nil, "", err
 	}
+	exclusions := make([]protocol.CredentialDescriptor, 0, len(user.Credentials))
+	for _, credential := range user.Credentials {
+		exclusions = append(exclusions, credential.Descriptor())
+	}
 	options, session, err := s.web.BeginRegistration(user,
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 		webauthn.WithConveyancePreference(protocol.PreferNoAttestation),
+		webauthn.WithExclusions(exclusions),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("begin passkey registration: %w", err)
