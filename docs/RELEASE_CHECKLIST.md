@@ -6,7 +6,7 @@
 
 - [ ] Нет известных Critical vulnerabilities.
 - [ ] Нет необъяснённых/непринятых High vulnerabilities.
-- [ ] Admin/Owner privileged accounts используют passkey/MFA согласно политике.
+- [ ] Все активные `owner` и `security` аккаунты имеют passkey; `ops/beta/gate.sh` проверяет это напрямую в БД.
 - [ ] Production secrets отсутствуют в Git, frontend bundle и логах.
 - [ ] Session rotation/revocation и refresh-token replay detection работают.
 - [ ] Object-level authorization проверен для chats/messages/groups/posts/media/admin.
@@ -35,6 +35,8 @@
 - [ ] Yandex OAuth redirect HTTPS, если интеграция включена.
 - [ ] Cookie Secure включён.
 - [ ] PostgreSQL/Redis/NATS не опубликованы напрямую в Internet.
+- [ ] API/Web не публикуют host ports и доступны только через Caddy HTTPS ingress.
+- [ ] `CHAT_TRUSTED_PROXY_CIDRS` доверяет только фиксированному Caddy peer, а не всей edge-подсети.
 - [ ] Media storage writable только нужным процессом.
 
 ## 4. BLOCKER — Messaging
@@ -51,6 +53,7 @@
 - [ ] Health/readiness endpoints проверены.
 - [ ] HTTP load test зафиксировал p50/p95/p99 и error rate.
 - [ ] WebSocket connection/reconnect scenario протестирован.
+- [ ] Reconnect-storm режим `backend/cmd/loadtest` завершился без transport/HTTP/WebSocket failures.
 - [ ] Reconnect storm не вызывает мгновенный self-DDoS благодаря backoff+jitter.
 - [ ] DB indexes проверены на основных list/history/feed запросах.
 - [ ] Деградация сохраняет Messaging раньше Feed/Discovery.
@@ -86,3 +89,13 @@
 - ответственный за rollback.
 
 Релиз считается состоявшимся только после post-deploy smoke check: login, profile, direct message, group message, post, Discover, report, admin moderation и media read.
+
+
+## 9. Public Beta external gate
+
+- [ ] Полный `ops/alpha/gate.sh` завершён PASS и release record сохранён.
+- [ ] Independent pentest report существует и все exploitable Critical/High устранены или официально блокируют запуск.
+- [ ] Legal/compliance sign-off относится к фактической production-модели, а не к абстрактной концепции.
+- [ ] Нет открытых high/critical Security Alerts.
+- [ ] Нет открытых/reviewing critical moderation cases.
+- [ ] `ops/beta/gate.sh` завершён PASS.
