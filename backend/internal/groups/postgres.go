@@ -117,6 +117,9 @@ func (s *PostgresStore) JoinByInvite(ctx context.Context,userID string,tokenHash
 	if _,err:=tx.Exec(ctx,`INSERT INTO chat_members(chat_id,user_id,role,left_at) VALUES($1::uuid,$2::uuid,'member',NULL) ON CONFLICT(chat_id,user_id) DO UPDATE SET left_at=NULL,role='member'`,chatID,userID);err!=nil{return Group{},err}
 	if _,err:=tx.Exec(ctx,`UPDATE group_invites SET uses_count=uses_count+1 WHERE token_hash=$1`,tokenHash);err!=nil{return Group{},err}
 	var g Group;if err:=tx.QueryRow(ctx,`SELECT c.id::text,c.title,COALESCE(c.description,''),(SELECT count(*) FROM chat_members WHERE chat_id=c.id AND left_at IS NULL) FROM chats c WHERE c.id=$1::uuid`,chatID).Scan(&g.ChatID,&g.Title,&g.Description,&g.MembersCount);err!=nil{return Group{},err};g.Role="member"
+	if _,err:=tx.Exec(ctx,`
+		INSERT INTO growth_events(event_name,user_id,object_type,object_id)
+		VALUES('invite_join',$1::uuid,'group_invite',$2)`,userID,chatID);err!=nil{return Group{},err}
 	if err:=tx.Commit(ctx);err!=nil{return Group{},err};return g,nil
 }
 
