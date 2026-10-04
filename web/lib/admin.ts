@@ -64,6 +64,16 @@ export type PlatformFlag = {
   updated_at: string;
 };
 
+export type BetaReadiness = {
+  privileged_without_passkey: number;
+  open_high_critical_alerts: number;
+  open_critical_cases: number;
+  disabled_features: string[];
+  internal_ready: boolean;
+  external_required: string[];
+  generated_at: string;
+};
+
 export type ProductMetrics = {
   window_days: number;
   registrations: number;
@@ -157,6 +167,13 @@ export async function acknowledgeSecurityAlert(eventId: number, note: string) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.error?.message ?? 'Не удалось подтвердить security alert');
   }
+}
+
+export async function getBetaReadiness(): Promise<BetaReadiness> {
+  const response = await call('/api/v1/admin/beta/readiness');
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить readiness');
+  return response.json() as Promise<BetaReadiness>;
 }
 
 export async function getProductMetrics(days: 7 | 30 | 90 = 7): Promise<ProductMetrics> {
