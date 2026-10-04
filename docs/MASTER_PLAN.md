@@ -67,7 +67,7 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 25 | Performance/load profiling | IN PROGRESS |
 | 26 | Security hardening + independent pentest gate | IN PROGRESS |
 | 27 | Backup/disaster recovery validation | IN PROGRESS |
-| 28 | Closed alpha | PLANNED |
+| 28 | Closed alpha | IN PROGRESS |
 | 29 | Product iteration from measured activation/retention | PLANNED |
 | 30 | Public beta gate | PLANNED |
 
@@ -174,7 +174,7 @@ Production uses a single Caddy HTTPS ingress. Browser API requests default to sa
 
 ### Performance / DR
 
-A Go load harness supports health bursts, idempotent message bursts and WebSocket connection tests and reports RPS/p50/p95/p99. Protected runtime metrics expose active WebSocket connections, dropped realtime events and PostgreSQL pool pressure. Automatic hysteresis-based load shedding limits Feed/Discovery/Search/media at 85% DB pool utilization and recovers below 70%, while Messaging remains outside the shed class. Actual server capacity numbers must still be measured on deployment hardware before Sprint 25 closes.
+A Go load harness supports health bursts, real message-write bursts, WebSocket connection tests and reconnect-storm tests and reports RPS/p50/p95/p99. The harness exits non-zero on transport, WebSocket or unexpected HTTP failures. Protected runtime metrics expose active WebSocket connections, dropped realtime events and PostgreSQL pool pressure. Automatic hysteresis-based load shedding limits Feed/Discovery/Search/media at 85% DB pool utilization and recovers below 70%, while Messaging remains outside the shed class. Actual server capacity numbers must still be measured on deployment hardware before Sprint 25 closes.
 
 DR scripts create integrity-checked PostgreSQL custom-format backups and media archives and require an explicit separate target + destructive confirmation for restore. `ops/backup/drill.sh` now runs a non-public isolated PostgreSQL restore, verifies critical durable tables and reports measured RTO. Sprint 27 closes only after this drill succeeds against an actual server backup.
 
@@ -284,3 +284,8 @@ A feature is not DONE until all applicable items are satisfied:
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
+
+
+## Closed Alpha execution
+
+Sprint 28 is now IN PROGRESS. The repository contains `ops/alpha/check.sh` for deployed HTTPS/health/security-header/auth-boundary smoke checks and `docs/CLOSED_ALPHA_RUNBOOK.md` for manual product validation. Alpha cannot move to DONE until the target server provides recorded evidence from release checks, clean migrations, WebAuthn device smoke, load/reconnect tests and an isolated restore drill.
