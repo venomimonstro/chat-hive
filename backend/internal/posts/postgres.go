@@ -51,6 +51,12 @@ func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Post, er
 		ref.URL = "/api/v1/media/" + ref.ID + "/content"
 		post.Media = append(post.Media, ref)
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO growth_events(event_name,user_id)
+		VALUES('first_post',$1::uuid)
+		ON CONFLICT DO NOTHING`, input.AuthorID); err != nil {
+		return Post{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Post{}, err
 	}
