@@ -88,13 +88,18 @@ func (l *RateLimiter) ShouldReport(key string, interval time.Duration) bool {
 	return true
 }
 
-func rateLimitMiddleware(limiter *RateLimiter, sink SecurityEventSink, next http.Handler) http.Handler {
+func rateLimitMiddleware(limiter *RateLimiter, sink SecurityEventSink, resolveClientIP func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health/live" || r.URL.Path == "/health/ready" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip := remoteIP(r)
+		ip := "unknown"
+		if resolveClientIP != nil {
+			ip = resolveClientIP(r)
+		} else {
+			ip = remoteIP(r)
+		}
 		rate, burst, bucketName := 20.0, 40.0, "general"
 		switch {
 		case strings.Contains(r.URL.Path, "/auth/"):
