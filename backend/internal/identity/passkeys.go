@@ -156,7 +156,10 @@ func (s *PasskeyService) FinishLogin(ctx context.Context, ceremonyID string, r *
 		return SessionTokens{}, err
 	}
 	if credential.Authenticator.CloneWarning {
-		_ = s.store.RecordPasskeyCloneWarning(ctx, resolved.ID, credential.ID, requestIP)
+		if err := s.store.RecordPasskeyCloneWarning(ctx, resolved.ID, credential.ID, requestIP); err != nil {
+			return SessionTokens{}, err
+		}
+		return SessionTokens{}, ErrPasskeyUnavailable
 	}
 	return s.identity.CreateSessionForUser(ctx, resolved.ID, userAgent, requestIP)
 }
