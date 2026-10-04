@@ -62,8 +62,8 @@ type AuthenticatedSession struct {
 }
 
 type DeviceSession struct {
-	SessionID  string
-	AuthMethod string    `json:"auth_method"`    `json:"session_id"`
+	SessionID  string    `json:"session_id"`
+	AuthMethod string    `json:"auth_method"`
 	UserAgent  string    `json:"user_agent"`
 	LastIP     string    `json:"last_ip"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -152,6 +152,7 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 		return SessionTokens{}, err
 	}
 	tokens.UserID = userID
+	tokens.AuthMethod = "email"
 
 	sessionID, err := s.store.CreateSession(ctx, CreateSessionInput{
 		UserID:           userID,
