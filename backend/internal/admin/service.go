@@ -116,6 +116,8 @@ type ProductMetrics struct {
 	LoginStarts            int64     `json:"login_starts"`
 	SignupCompletedEvents  int64     `json:"signup_completed_events"`
 	InviteJoins            int64     `json:"invite_joins"`
+	CommunityJoins         int64     `json:"community_joins"`
+	ChannelSubscribes      int64     `json:"channel_subscribes"`
 	ActiveUsers            int64     `json:"active_users"`
 	D1Eligible             int64     `json:"d1_eligible"`
 	D1Retained             int64     `json:"d1_retained"`
