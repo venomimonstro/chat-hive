@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -138,7 +139,13 @@ func (s *PostgresStore) SetFollow(ctx context.Context, followerID, username stri
 	}
 
 	if follow {
-		_, err = tx.Exec(ctx, `INSERT INTO follows (follower_id, followed_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, followerID, followedID)
+		var result pgconn.CommandTag
+		result, err = tx.Exec(ctx, `INSERT INTO follows (follower_id, followed_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, followerID, followedID)
+		if err == nil && result.RowsAffected() == 1 {
+			_, err = tx.Exec(ctx, `
+				INSERT INTO growth_events(event_name,user_id,object_type,object_id)
+				VALUES('follow',$1::uuid,'profile',$2)`, followerID, followedID)
+		}
 	} else {
 		_, err = tx.Exec(ctx, `DELETE FROM follows WHERE follower_id = $1::uuid AND followed_id = $2::uuid`, followerID, followedID)
 	}
