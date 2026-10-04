@@ -19,6 +19,7 @@ export type PasskeyInfo = {
 type SessionPayload = {
   user_id: string;
   session_id: string;
+  auth_method: 'legacy' | 'email' | 'yandex' | 'passkey';
   access_token: string;
   access_expires_at: string;
 };
