@@ -65,7 +65,7 @@ export default function ModerationAdminPage() {
     <main className="adminShell">
       <aside className="adminSidebar">
         <a className="adminBrand" href="/admin/moderation">CHAT <span>Admin</span></a>
-        <nav><a className="isActive" href="/admin/moderation">Модерация</a><a href="/">Вернуться в CHAT</a></nav>
+        <nav><a className="isActive" href="/admin/moderation">Модерация</a><a href="/admin/security">Security</a>{roles.includes('owner') ? <a href="/admin/product">Product</a> : null}<a href="/">Вернуться в CHAT</a></nav>
         <div className="adminRoles">{roles.map((role) => <span key={role}>{role}</span>)}</div>
       </aside>
       <section className="adminContent">
