@@ -85,6 +85,8 @@ export type ProductMetrics = {
   login_starts: number;
   signup_completed_events: number;
   invite_joins: number;
+  community_joins: number;
+  channel_subscribes: number;
   active_users: number;
   d1_eligible: number;
   d1_retained: number;
