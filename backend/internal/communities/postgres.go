@@ -83,6 +83,9 @@ func (s *PostgresStore) Join(ctx context.Context,userID,slug string)(Community,e
 	var blocked bool;if err:=tx.QueryRow(ctx,`SELECT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$1::uuid AND blocked_id=$2::uuid) OR (blocker_id=$2::uuid AND blocked_id=$1::uuid))`,userID,ownerID).Scan(&blocked);err!=nil{return Community{},err};if blocked{return Community{},ErrForbidden}
 	if _,err:=tx.Exec(ctx,`INSERT INTO community_members(community_id,user_id,role,left_at) VALUES($1::uuid,$2::uuid,'member',NULL) ON CONFLICT(community_id,user_id) DO UPDATE SET left_at=NULL,role=CASE WHEN community_members.role='owner' THEN 'owner' ELSE 'member' END`,id,userID);err!=nil{return Community{},err}
 	if _,err:=tx.Exec(ctx,`INSERT INTO chat_members(chat_id,user_id,role,left_at) VALUES($1::uuid,$2::uuid,'member',NULL) ON CONFLICT(chat_id,user_id) DO UPDATE SET left_at=NULL,role=CASE WHEN chat_members.role='owner' THEN 'owner' ELSE 'member' END`,chatID,userID);err!=nil{return Community{},err}
+	if _,err:=tx.Exec(ctx,`
+		INSERT INTO growth_events(event_name,user_id,object_type,object_id)
+		VALUES('community_join',$1::uuid,'community',$2)`,userID,id);err!=nil{return Community{},err}
 	if err:=tx.Commit(ctx);err!=nil{return Community{},err}
 	return s.Get(ctx,userID,slug)
 }
