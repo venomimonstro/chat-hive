@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Surface } from '../../../components/ui';
-import { getAdminPrincipal, getProductMetrics, ProductMetrics } from '../../../lib/admin';
+import { BetaReadiness, getAdminPrincipal, getBetaReadiness, getProductMetrics, ProductMetrics } from '../../../lib/admin';
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -17,6 +17,7 @@ export default function ProductAdminPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [days, setDays] = useState<7 | 30 | 90>(7);
   const [metrics, setMetrics] = useState<ProductMetrics | null>(null);
+  const [readiness, setReadiness] = useState<BetaReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -28,7 +29,12 @@ export default function ProductAdminPage() {
       if (!principal) { router.replace('/'); return; }
       if (!principal.roles.includes('owner')) { router.replace('/admin/moderation'); return; }
       setRoles(principal.roles);
-      setMetrics(await getProductMetrics(windowDays));
+      const [productMetrics, betaReadiness] = await Promise.all([
+        getProductMetrics(windowDays),
+        getBetaReadiness()
+      ]);
+      setMetrics(productMetrics);
+      setReadiness(betaReadiness);
     } catch (err) {
       if (err instanceof Error && err.message === 'Authentication required') { router.replace('/login'); return; }
       setError(err instanceof Error ? err.message : 'Не удалось загрузить продуктовые метрики');
@@ -80,6 +86,25 @@ export default function ProductAdminPage() {
 
         {loading ? <p className="adminState">Считаем метрики…</p> : null}
         {error ? <p className="adminError" role="alert">{error}</p> : null}
+
+        {readiness ? (
+          <section className={`adminReadiness ${readiness.internal_ready ? 'isReady' : 'isBlocked'}`}>
+            <Surface>
+              <div className="adminReadinessHeader">
+                <div><span>PUBLIC BETA READINESS</span><h2>{readiness.internal_ready ? 'Внутренние блокеры закрыты' : 'Запуск заблокирован'}</h2></div>
+                <strong>{readiness.internal_ready ? 'READY' : 'BLOCKED'}</strong>
+              </div>
+              <div className="adminReadinessGrid">
+                <div><span>Без passkey</span><strong>{readiness.privileged_without_passkey}</strong></div>
+                <div><span>High/Critical alerts</span><strong>{readiness.open_high_critical_alerts}</strong></div>
+                <div><span>Critical moderation</span><strong>{readiness.open_critical_cases}</strong></div>
+                <div><span>Paused features</span><strong>{readiness.disabled_features.length}</strong></div>
+              </div>
+              {readiness.disabled_features.length ? <p>Приостановлено: {readiness.disabled_features.join(', ')}</p> : null}
+              <p>Внешние обязательные gates: {readiness.external_required.join(', ')}.</p>
+            </Surface>
+          </section>
+        ) : null}
 
         {metrics ? (
           <>
