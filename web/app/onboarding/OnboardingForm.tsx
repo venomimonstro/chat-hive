@@ -23,8 +23,7 @@ export function OnboardingForm() {
       .then(([items, profile]) => {
         setInterests(items);
         if (profile?.completed) {
-          void recordGrowthEvent('signup_completed');
-      router.replace(takeReturnTo('/'));
+          router.replace(takeReturnTo('/'));
           return;
         }
         if (profile) {
@@ -58,6 +57,7 @@ export function OnboardingForm() {
         bio: bio.trim(),
         interests: selected
       });
+      void recordGrowthEvent('signup_completed');
       router.replace(takeReturnTo('/'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить профиль');
