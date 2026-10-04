@@ -29,10 +29,11 @@ type result struct {
 }
 
 func main() {
-	mode := flag.String("mode", "health", "health|messages|websocket")
+	mode := flag.String("mode", "health", "health|messages|websocket|reconnect")
 	base := flag.String("base", env("CHAT_LOAD_BASE_URL", "http://localhost:8080"), "API base URL")
 	requests := flag.Int("requests", 200, "total HTTP requests")
 	concurrency := flag.Int("concurrency", 20, "concurrent workers/connections")
+	reconnectRounds := flag.Int("reconnect-rounds", 5, "reconnect cycles per worker")
 	flag.Parse()
 
 	access := strings.TrimSpace(os.Getenv("CHAT_LOAD_ACCESS_TOKEN"))
@@ -47,6 +48,9 @@ func main() {
 	case "websocket":
 		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
 		runWebSockets(*base, access, *concurrency)
+	case "reconnect":
+		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
+		runReconnectStorm(*base, access, *concurrency, *reconnectRounds)
 	default:
 		fatal("unknown mode")
 	}
@@ -90,7 +94,7 @@ func runMessageBurst(base, token, chatID string, total, concurrency int) {
 		go func(){
 			defer wg.Done()
 			for index:=range jobs{
-				payload,_:=json.Marshal(map[string]string{"client_message_id":newUUID(),"body":fmt.Sprintf("load-test-%d",index)})
+				payload,_:=json.Marshal(map[string]string{"client_message_id":newUUID(),"text":fmt.Sprintf("load-test-%d",index)})
 				begin:=time.Now()
 				req,err:=http.NewRequest(http.MethodPost,strings.TrimRight(base,"/")+"/api/v1/chats/"+url.PathEscape(chatID)+"/messages",bytes.NewReader(payload))
 				if err==nil{req.Header.Set("Authorization","Bearer "+token);req.Header.Set("Content-Type","application/json")}
@@ -136,6 +140,61 @@ func runWebSockets(base, token string, count int) {
 	fmt.Printf("websocket connections=%d successful=%d failed=%d wall=%s",count,len(latencies),failures,time.Since(started))
 	if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))}
 	fmt.Println()
+}
+
+func runReconnectStorm(base, token string, workers, rounds int) {
+	if workers <= 0 || rounds <= 0 { fatal("concurrency and reconnect-rounds must be positive") }
+	total := workers * rounds
+	type wsResult struct{ duration time.Duration; err error }
+	results := make(chan wsResult, total)
+	var wg sync.WaitGroup
+	started := time.Now()
+
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for round := 0; round < rounds; round++ {
+				begin := time.Now()
+				ticket, err := issueTicket(base, token)
+				if err != nil { results <- wsResult{err: err}; continue }
+				wsURL, err := toWS(base, ticket)
+				if err != nil { results <- wsResult{err: err}; continue }
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+					HTTPHeader: http.Header{"Origin": []string{browserOrigin(base)}},
+				})
+				if err != nil {
+					cancel()
+					results <- wsResult{err: err}
+					continue
+				}
+				var ready map[string]any
+				err = wsjson.Read(ctx, conn, &ready)
+				if err == nil && ready["type"] != "ready" {
+					err = fmt.Errorf("unexpected realtime event %v", ready["type"])
+				}
+				_ = conn.Close(websocket.StatusNormalClosure, "reconnect test")
+				cancel()
+				results <- wsResult{duration: time.Since(begin), err: err}
+			}
+		}()
+	}
+	go func(){ wg.Wait(); close(results) }()
+
+	latencies := make([]time.Duration, 0, total)
+	failures := 0
+	for item := range results {
+		if item.err != nil { failures++; continue }
+		latencies = append(latencies, item.duration)
+	}
+	sort.Slice(latencies, func(i,j int) bool { return latencies[i] < latencies[j] })
+	fmt.Printf("reconnect attempts=%d successful=%d failed=%d wall=%s", total, len(latencies), failures, time.Since(started))
+	if len(latencies)>0 {
+		fmt.Printf(" p50=%s p95=%s p99=%s", percentile(latencies,.50), percentile(latencies,.95), percentile(latencies,.99))
+	}
+	fmt.Println()
+	if failures > 0 { os.Exit(1) }
 }
 
 func issueTicket(base,token string)(string,error){
