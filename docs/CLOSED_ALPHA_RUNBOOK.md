@@ -30,7 +30,7 @@ The following services must not have public listeners:
 - backup storage;
 - admin database tooling.
 
-Do not trust arbitrary `X-Forwarded-For`. If a reverse proxy is introduced, trusted-proxy handling must be explicitly implemented and scoped to the proxy network before forwarded addresses are used for security decisions.
+`X-Forwarded-For` is accepted only when the immediate peer is the explicitly trusted Caddy address. Production compose pins Caddy to `172.31.238.2` and API trusts only `172.31.238.2/32`; requests from users or the web container cannot supply trusted forwarded addresses. If this topology changes, update both the fixed proxy address and `CHAT_TRUSTED_PROXY_CIDRS` together.
 
 ## 3. Required production variables
 
@@ -43,6 +43,7 @@ CHAT_ENV=production
 CHAT_DATABASE_URL=postgres://<non-default-user>:<secret>@<private-host>:5432/<db>?sslmode=<required-mode>
 CHAT_WEB_ORIGIN=https://<public-web-host>
 CHAT_MAGIC_LINK_BASE_URL=https://<public-web-host>/auth/callback
+CHAT_TRUSTED_PROXY_CIDRS=172.31.238.2/32
 CHAT_SMTP_ADDR=<smtp-host:port>
 CHAT_SMTP_USERNAME=<if required>
 CHAT_SMTP_PASSWORD=<secret>
