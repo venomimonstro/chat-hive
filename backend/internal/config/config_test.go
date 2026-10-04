@@ -46,6 +46,15 @@ func TestProductionRejectsPlaceholderSMTPFrom(t *testing.T) {
 	}
 }
 
+func TestProductionRequiresTrustedProxyCIDR(t *testing.T) {
+	setProductionBase(t)
+	t.Setenv("CHAT_TRUSTED_PROXY_CIDRS", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected trusted proxy CIDR to be required in production")
+	}
+}
+
 func TestProductionAcceptsExplicitSecureConfiguration(t *testing.T) {
 	setProductionBase(t)
 
@@ -69,4 +78,5 @@ func setProductionBase(t *testing.T) {
 	t.Setenv("CHAT_SMTP_PASSWORD", "smtp-password")
 	t.Setenv("CHAT_SMTP_FROM", "CHAT <no-reply@chat.example.test>")
 	t.Setenv("CHAT_YANDEX_CLIENT_ID", "")
+	t.Setenv("CHAT_TRUSTED_PROXY_CIDRS", "172.31.238.2/32")
 }
