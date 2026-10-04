@@ -157,7 +157,7 @@ Public profile, public post permalink/replies/media, approved channels and appro
 
 ### Edge / security hardening
 
-Implemented: strict CORS allowlist, secure headers, no-store for API, panic recovery, request IDs, request telemetry, bounded single-node rate limiter with Retry-After, WebSocket-safe telemetry handling, non-root scratch backend Docker image and dependency-locked websocket library. Behind production Caddy, client IP recovery is trusted-proxy aware: forwarded addresses are accepted only from the fixed Caddy peer `172.31.238.2/32`; direct users and the web container cannot spoof XFF for rate limits, auth abuse detection or admin audit.
+Implemented: strict CORS allowlist, secure headers, no-store for API, panic recovery, request IDs, request telemetry, bounded single-node rate limiter with Retry-After, WebSocket-safe telemetry handling, non-root scratch backend Docker image and dependency-locked websocket library. Session records now carry an explicit authentication method; sensitive Admin operations for owner/security require a passkey-authenticated session. Privileged roles cannot be bootstrapped without an existing passkey, privileged passkey changes require passkey step-up, and passkey clone warnings fail closed. Behind production Caddy, client IP recovery is trusted-proxy aware: forwarded addresses are accepted only from the fixed Caddy peer `172.31.238.2/32`; direct users and the web container cannot spoof XFF for rate limits, auth abuse detection or admin audit.
 
 Production configuration is fail-closed: explicit database URL is required, development database credentials are rejected, web/magic-link/Yandex URLs require HTTPS, production SMTP is mandatory and example.com sender values are rejected.
 
@@ -297,4 +297,4 @@ Sprint 29 is IN PROGRESS before cohort data exists so measurement is ready on da
 
 ## Sprint 30 Public Beta gate
 
-Sprint 30 is IN PROGRESS. `ops/beta/gate.sh` executes the full Alpha technical gate and additionally requires passkey coverage for active owner/security accounts, zero open high/critical security alerts, zero critical moderation cases, an independent pentest report and legal/compliance sign-off evidence. `docs/PUBLIC_BETA_GATE.md` defines the external evidence contract. Sprint 30 cannot be DONE from repository code alone.
+Sprint 30 is IN PROGRESS. `ops/beta/gate.sh` executes the full Alpha technical gate and additionally requires passkey coverage for active owner/security accounts, zero open high/critical security alerts, zero critical moderation cases, an independent pentest report and legal/compliance sign-off evidence. Privileged Admin authorization itself also enforces passkey session step-up; credential presence alone is not treated as MFA enforcement. `docs/PUBLIC_BETA_GATE.md` defines the external evidence contract. Sprint 30 cannot be DONE from repository code alone.
