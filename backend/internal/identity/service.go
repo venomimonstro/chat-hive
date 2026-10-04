@@ -36,6 +36,7 @@ type MagicLinkSender interface {
 
 type CreateSessionInput struct {
 	UserID           string
+	AuthMethod       string
 	AccessTokenHash  []byte
 	RefreshTokenHash []byte
 	UserAgent        string
@@ -54,13 +55,15 @@ type RotateSessionInput struct {
 }
 
 type AuthenticatedSession struct {
-	UserID    string    `json:"user_id"`
-	SessionID string    `json:"session_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	UserID     string    `json:"user_id"`
+	SessionID  string    `json:"session_id"`
+	AuthMethod string    `json:"auth_method"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type DeviceSession struct {
-	SessionID  string    `json:"session_id"`
+	SessionID  string
+	AuthMethod string    `json:"auth_method"`    `json:"session_id"`
 	UserAgent  string    `json:"user_agent"`
 	LastIP     string    `json:"last_ip"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -70,6 +73,7 @@ type DeviceSession struct {
 
 type SessionTokens struct {
 	UserID        string
+	AuthMethod    string
 	SessionID     string
 	AccessToken   string
 	RefreshToken  string
@@ -151,6 +155,7 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 
 	sessionID, err := s.store.CreateSession(ctx, CreateSessionInput{
 		UserID:           userID,
+		AuthMethod:       "email",
 		AccessTokenHash:  accessHash,
 		RefreshTokenHash: refreshHash,
 		UserAgent:        truncate(userAgent, 512),
@@ -176,7 +181,9 @@ func (s *Service) CreateSessionForUser(ctx context.Context, userID, userAgent, r
 		return SessionTokens{}, err
 	}
 	tokens.UserID = userID
+	tokens.AuthMethod = "passkey"
 	sessionID, err := s.store.CreateSession(ctx, CreateSessionInput{
+		AuthMethod:       "passkey",
 		UserID:           userID,
 		AccessTokenHash:  accessHash,
 		RefreshTokenHash: refreshHash,
@@ -221,6 +228,7 @@ func (s *Service) RefreshSession(ctx context.Context, rawRefreshToken string) (S
 
 	tokens.UserID = session.UserID
 	tokens.SessionID = session.SessionID
+	tokens.AuthMethod = session.AuthMethod
 	return tokens, nil
 }
 
