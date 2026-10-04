@@ -298,6 +298,8 @@ func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMe
 			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='login_started' AND g.created_at>=b.window_start),
 			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='signup_completed' AND g.created_at>=b.window_start),
 			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='invite_join' AND g.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='community_join' AND g.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='channel_subscribe' AND g.created_at>=b.window_start),
 			(SELECT count(DISTINCT a.user_id) FROM activity a,bounds b WHERE a.created_at>=b.window_start),
 			(SELECT count(*) FROM d1_cohort),
 			(SELECT count(*) FROM d1_cohort c WHERE EXISTS (
@@ -322,6 +324,8 @@ func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMe
 		&result.LoginStarts,
 		&result.SignupCompletedEvents,
 		&result.InviteJoins,
+		&result.CommunityJoins,
+		&result.ChannelSubscribes,
 		&result.ActiveUsers,
 		&result.D1Eligible,
 		&result.D1Retained,
