@@ -9,6 +9,13 @@ type BeginPayload = {
   options: { publicKey: Record<string, any> };
 };
 
+export type PasskeyInfo = {
+  credential_id: string;
+  label: string;
+  created_at: string;
+  last_used_at?: string;
+};
+
 type SessionPayload = {
   user_id: string;
   session_id: string;
@@ -186,4 +193,20 @@ export async function loginWithPasskey(): Promise<SessionPayload> {
   const session = await finish.json() as SessionPayload;
   setAccessToken(session.access_token);
   return session;
+}
+
+
+export async function listPasskeys(): Promise<PasskeyInfo[]> {
+  const response = await authFetch('/api/v1/auth/passkeys', { method: 'GET' });
+  if (!response.ok) throw new Error(await parseError(response));
+  const payload = await response.json() as { items: PasskeyInfo[] };
+  return payload.items;
+}
+
+export async function deletePasskey(credentialId: string) {
+  const response = await authFetch(
+    `/api/v1/auth/passkeys/${encodeURIComponent(credentialId)}`,
+    { method: 'DELETE' }
+  );
+  if (!response.ok && response.status !== 404) throw new Error(await parseError(response));
 }
