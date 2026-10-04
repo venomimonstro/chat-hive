@@ -29,6 +29,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/posts"
 	"github.com/venomimonstro/chat-hive/backend/internal/realtime"
 	"github.com/venomimonstro/chat-hive/backend/internal/requests"
+	"github.com/venomimonstro/chat-hive/backend/internal/requestmeta"
 	"github.com/venomimonstro/chat-hive/backend/internal/search"
 	"github.com/venomimonstro/chat-hive/backend/internal/securityevents"
 	"github.com/venomimonstro/chat-hive/backend/internal/social"
@@ -54,8 +55,12 @@ func main() {
 	}
 	if err != nil { logger.Error("magic link sender configuration failed", "error", err); os.Exit(1) }
 
+	clientIPResolver, err := requestmeta.NewClientIPResolver(cfg.TrustedProxyCIDRs)
+	if err != nil { logger.Error("trusted proxy configuration failed", "error", err); os.Exit(1) }
+
 	identityService := identity.NewService(store, sender)
 	identityHTTP := identity.NewHTTPHandler(identityService, logger, cfg.CookieSecure)
+	identityHTTP.SetClientIPResolver(clientIPResolver.Resolve)
 	if cfg.YandexClientID != "" {
 		identityHTTP.SetYandexOAuth(identity.NewYandexOAuth(store, identity.YandexConfig{ClientID: cfg.YandexClientID, RedirectURL: cfg.YandexRedirectURL, WebCompleteURL: cfg.WebOrigin + "/auth/yandex-complete"}))
 	}
@@ -81,6 +86,7 @@ func main() {
 	requestHTTP := requests.NewHTTPHandler(requests.NewService(requests.NewPostgresStore(pool)), identityService, logger)
 	moderationHTTP := moderation.NewHTTPHandler(moderation.NewService(moderation.NewPostgresStore(pool)), identityService, logger)
 	adminHTTP := admin.NewHTTPHandler(admin.NewService(admin.NewPostgresStore(pool)), identityService, logger)
+	adminHTTP.SetClientIPResolver(clientIPResolver.Resolve)
 	communityHTTP := communities.NewHTTPHandler(communities.NewService(communities.NewPostgresStore(pool)), identityService, logger)
 	channelHTTP := channels.NewHTTPHandler(channels.NewService(channels.NewPostgresStore(pool)), identityService, logger)
 
@@ -134,6 +140,7 @@ func main() {
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 	app.SetSecurityEventSink(securityevents.NewPostgresStore(pool))
+	app.SetClientIPResolver(clientIPResolver.Resolve)
 	app.SetOperationalGate(featureflags.NewStore(pool))
 	pressureGate := httpserver.NewPressureGate(85, 70)
 	app.SetDegradedCheck(func() bool {
