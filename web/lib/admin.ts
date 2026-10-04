@@ -64,6 +64,26 @@ export type PlatformFlag = {
   updated_at: string;
 };
 
+export type ProductMetrics = {
+  window_days: number;
+  registrations: number;
+  onboarding_completed: number;
+  first_message_users: number;
+  first_post_users: number;
+  follow_creators: number;
+  public_views: number;
+  login_starts: number;
+  signup_completed_events: number;
+  invite_joins: number;
+  active_users: number;
+  d1_eligible: number;
+  d1_retained: number;
+  d7_eligible: number;
+  d7_retained: number;
+  open_moderation_cases: number;
+  generated_at: string;
+};
+
 export type SecuritySummary = {
   critical_15m: number;
   high_15m: number;
@@ -137,6 +157,13 @@ export async function acknowledgeSecurityAlert(eventId: number, note: string) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.error?.message ?? 'Не удалось подтвердить security alert');
   }
+}
+
+export async function getProductMetrics(days: 7 | 30 | 90 = 7): Promise<ProductMetrics> {
+  const response = await call(`/api/v1/admin/product/metrics?days=${days}`);
+  if (response.status === 404) throw new Error('Access denied');
+  if (!response.ok) throw new Error('Не удалось загрузить продуктовые метрики');
+  return response.json() as Promise<ProductMetrics>;
 }
 
 export async function getSecuritySummary(): Promise<SecuritySummary> {
