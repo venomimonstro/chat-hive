@@ -52,6 +52,13 @@ docker exec "$NAME" psql -v ON_ERROR_STOP=1 -U "$USER" -d "$DB" -c \
 mapfile -t down_files < <(find "$MIGRATIONS" -maxdepth 1 -type f -name '*.down.sql' | sort -r)
 [[ ${#down_files[@]} -eq ${#up_files[@]} ]] || fail "up/down migration count mismatch: up=${#up_files[@]} down=${#down_files[@]}"
 
+up_stems="$(printf '%s\n' "${up_files[@]##*/}" | sed 's/\.up\.sql$//' | sort)"
+down_stems="$(printf '%s\n' "${down_files[@]##*/}" | sed 's/\.down\.sql$//' | sort)"
+[[ "$up_stems" == "$down_stems" ]] || {
+  printf 'UP migrations:\n%s\nDOWN migrations:\n%s\n' "$up_stems" "$down_stems" >&2
+  fail "migration up/down names do not match"
+}
+
 info "applying down migrations in reverse order"
 for file in "${down_files[@]}"; do
   printf '   <- %s\n' "$(basename "$file")"
