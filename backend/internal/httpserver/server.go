@@ -22,6 +22,7 @@ type Server struct {
 	securitySink    SecurityEventSink
 	operationalGate OperationalGate
 	degradedCheck   func() bool
+	clientIPResolver func(*http.Request) string
 }
 
 type healthResponse struct {
@@ -41,13 +42,14 @@ func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.Tri
 func (s *Server) SetSecurityEventSink(sink SecurityEventSink) { s.securitySink = sink }
 func (s *Server) SetOperationalGate(gate OperationalGate) { s.operationalGate = gate }
 func (s *Server) SetDegradedCheck(check func() bool) { s.degradedCheck = check }
+func (s *Server) SetClientIPResolver(resolve func(*http.Request) string) { s.clientIPResolver = resolve }
 
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
 	handler = bodyLimitMiddleware(handler)
 	handler = loadSheddingMiddleware(s.degradedCheck, handler)
 	handler = operationalGateMiddleware(s.operationalGate, s.logger, handler)
-	handler = rateLimitMiddleware(s.limiter, s.securitySink, handler)
+	handler = rateLimitMiddleware(s.limiter, s.securitySink, s.clientIPResolver, handler)
 	handler = corsMiddleware(s.allowedOrigin, handler)
 	handler = securityHeaders(handler)
 	handler = requestTelemetryMiddleware(s.logger, handler)
