@@ -17,7 +17,8 @@ type HTTPHandler struct {
 	service         *Service
 	guard           *authhttp.Guard
 	logger          *slog.Logger
-	runtimeSnapshot func() RuntimeSnapshot
+	runtimeSnapshot  func() RuntimeSnapshot
+	clientIPResolver func(*http.Request) string
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
@@ -26,6 +27,9 @@ func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logge
 
 func (h *HTTPHandler) SetRuntimeSnapshot(provider func() RuntimeSnapshot) {
 	h.runtimeSnapshot = provider
+}
+func (h *HTTPHandler) SetClientIPResolver(resolve func(*http.Request) string) {
+	h.clientIPResolver = resolve
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -200,11 +204,18 @@ func (h *HTTPHandler) audit(r *http.Request, principal Principal, action, target
 		TargetID: targetID,
 		Reason: reason,
 		RequestID: strings.TrimSpace(r.Header.Get("X-Request-ID")),
-		SourceIP: remoteIP(r.RemoteAddr),
+		SourceIP: h.auditSourceIP(r),
 	}
 	if err := h.service.Audit(r.Context(), input); err != nil {
 		h.logger.Error("admin audit write failed", "error", err, "action", action, "user_id", principal.UserID)
 	}
+}
+
+func (h *HTTPHandler) auditSourceIP(r *http.Request) string {
+	if h.clientIPResolver != nil {
+		return h.clientIPResolver(r)
+	}
+	return remoteIP(r.RemoteAddr)
 }
 
 func remoteIP(remoteAddr string) string {
