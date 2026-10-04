@@ -7,6 +7,8 @@
 - [ ] Нет известных Critical vulnerabilities.
 - [ ] Нет необъяснённых/непринятых High vulnerabilities.
 - [ ] Все активные `owner` и `security` аккаунты имеют passkey; `ops/beta/gate.sh` проверяет это напрямую в БД.
+- [ ] Чувствительные Admin endpoints для `owner/security` отклоняют email/Yandex/legacy session с `passkey_required` и работают только из passkey-authenticated session.
+- [ ] Privileged account не может добавить/удалить passkey из non-passkey session; первичный role grant невозможен без заранее созданного passkey.
 - [ ] Production secrets отсутствуют в Git, frontend bundle и логах.
 - [ ] Session rotation/revocation и refresh-token replay detection работают.
 - [ ] Object-level authorization проверен для chats/messages/groups/posts/media/admin.
