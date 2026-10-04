@@ -75,22 +75,22 @@ func (s *PostgresStore) ConsumeLoginChallenge(ctx context.Context, tokenHash []b
 
 func (s *PostgresStore) CreateSession(ctx context.Context, input CreateSessionInput) (string, error) {
 	const query = `
-		INSERT INTO sessions (user_id, refresh_token_hash, access_token_hash, user_agent, last_ip, access_expires_at, expires_at)
-		VALUES ($1::uuid, $2, $3, $4, NULLIF($5, '')::inet, $6, $7)
+		INSERT INTO sessions (user_id, auth_method, refresh_token_hash, access_token_hash, user_agent, last_ip, access_expires_at, expires_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6, '')::inet, $7, $8)
 		RETURNING id::text`
 	var sessionID string
-	if err := s.pool.QueryRow(ctx, query,input.UserID,input.RefreshTokenHash,input.AccessTokenHash,input.UserAgent,input.IP,input.AccessExpiresAt,input.RefreshExpiresAt).Scan(&sessionID); err != nil { return "", err }
+	if err := s.pool.QueryRow(ctx, query,input.UserID,input.AuthMethod,input.RefreshTokenHash,input.AccessTokenHash,input.UserAgent,input.IP,input.AccessExpiresAt,input.RefreshExpiresAt).Scan(&sessionID); err != nil { return "", err }
 	_, _ = s.pool.Exec(ctx, `INSERT INTO security_events(event_type,severity,user_id,session_id,source_ip,subject_type,subject_id) VALUES('session_created','info',$1::uuid,$2::uuid,NULLIF($3,'')::inet,'session',$2)`, input.UserID, sessionID, input.IP)
 	return sessionID, nil
 }
 
 func (s *PostgresStore) FindSessionByAccessTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (AuthenticatedSession, error) {
 	const query = `
-		SELECT user_id::text, id::text, access_expires_at
+		SELECT user_id::text, id::text, auth_method, access_expires_at
 		FROM sessions
 		WHERE access_token_hash = $1 AND revoked_at IS NULL AND access_expires_at > $2 AND expires_at > $2`
 	var session AuthenticatedSession
-	if err := s.pool.QueryRow(ctx, query, tokenHash, now).Scan(&session.UserID, &session.SessionID, &session.ExpiresAt); err != nil {
+	if err := s.pool.QueryRow(ctx, query, tokenHash, now).Scan(&session.UserID, &session.SessionID, &session.AuthMethod, &session.ExpiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) { return AuthenticatedSession{}, ErrInvalidSession }
 		return AuthenticatedSession{}, err
 	}
@@ -104,11 +104,11 @@ func (s *PostgresStore) RotateRefreshToken(ctx context.Context, input RotateSess
 
 	var session AuthenticatedSession
 	const selectCurrent = `
-		SELECT user_id::text, id::text, access_expires_at
+		SELECT user_id::text, id::text, auth_method, access_expires_at
 		FROM sessions
 		WHERE refresh_token_hash = $1 AND revoked_at IS NULL AND expires_at > $2
 		FOR UPDATE`
-	err = tx.QueryRow(ctx, selectCurrent, input.OldRefreshTokenHash, input.Now).Scan(&session.UserID,&session.SessionID,&session.ExpiresAt)
+	err = tx.QueryRow(ctx, selectCurrent, input.OldRefreshTokenHash, input.Now).Scan(&session.UserID,&session.SessionID,&session.AuthMethod,&session.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var replaySessionID, replayUserID string
 		const findReplay = `
