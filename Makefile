@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: up down backend web test build fmt release-check
+.PHONY: up down backend web test build fmt frontend-lock release-check alpha-gate beta-gate
 
 up:
 	docker compose up -d postgres redis nats
@@ -25,5 +25,14 @@ build:
 fmt:
 	cd backend && gofmt -w .
 
+frontend-lock:
+	bash ops/frontend/lock.sh
+
 release-check:
-	sh ops/release/check.sh
+	bash ops/release/check.sh
+
+alpha-gate:
+	bash ops/alpha/gate.sh
+
+beta-gate:
+	bash ops/beta/gate.sh
