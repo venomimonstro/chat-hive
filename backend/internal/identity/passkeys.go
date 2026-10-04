@@ -18,6 +18,13 @@ var (
 	ErrPasskeyUnavailable     = errors.New("passkey unavailable")
 )
 
+type PasskeyInfo struct {
+	CredentialID string     `json:"credential_id"`
+	Label        string     `json:"label"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+}
+
 type passkeyUser struct {
 	ID          string
 	Name        string
@@ -147,4 +154,13 @@ func (s *PasskeyService) FinishLogin(ctx context.Context, ceremonyID string, r *
 		_ = s.store.RecordPasskeyCloneWarning(ctx, resolved.ID, credential.ID, requestIP)
 	}
 	return s.identity.CreateSessionForUser(ctx, resolved.ID, userAgent, requestIP)
+}
+
+
+func (s *PasskeyService) ListCredentials(ctx context.Context, userID string) ([]PasskeyInfo, error) {
+	return s.store.ListPasskeyInfo(ctx, userID)
+}
+
+func (s *PasskeyService) DeleteCredential(ctx context.Context, userID, encodedCredentialID string) error {
+	return s.store.DeletePasskeyCredential(ctx, userID, encodedCredentialID)
 }
