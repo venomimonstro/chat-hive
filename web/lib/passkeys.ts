@@ -38,7 +38,7 @@ function encodeBase64URL(value: ArrayBuffer | ArrayBufferView | null | undefined
     : new Uint8Array(value);
   let binary = '';
   for (const byte of view) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/+/g, '-').replace(///g, '_').replace(/=+$/g, '');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function creationOptions(input: Record<string, any>): PublicKeyCredentialCreationOptions {
