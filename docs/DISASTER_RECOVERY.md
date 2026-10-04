@@ -37,7 +37,15 @@ Verification checks the manifest, PostgreSQL custom archive and media tarball wh
 
 ## Restore drill
 
-Never restore a test into the live database. Create an isolated PostgreSQL target and set:
+Preferred automated drill:
+
+```sh
+sh ops/backup/drill.sh ./backups/<timestamp>
+```
+
+The drill starts a temporary PostgreSQL container without published ports, mounts the backup read-only, verifies checksums, restores the dump, checks critical durable tables and prints measured `rto_seconds`. The container is removed on exit.
+
+For a deeper manual drill with media restoration and an isolated application instance, never restore into the live database. Create an isolated PostgreSQL target and set:
 
 ```sh
 export RESTORE_DATABASE_URL='postgres://.../chat_restore_test'
@@ -63,5 +71,5 @@ After restore, run application migrations in verification mode, start an isolate
 - Backup destination must be outside the primary server/failure domain.
 - Enable object versioning/immutability where the provider supports it.
 - Quarterly restore drills before scale; monthly after business-critical adoption.
-- Record restore duration and resulting RPO/RTO in an incident/DR log.
+- Record `ops/backup/drill.sh` output, restore duration and resulting RPO/RTO in an incident/DR log.
 - A successful backup job without a recent successful restore drill does not satisfy the release gate.
