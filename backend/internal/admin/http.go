@@ -44,6 +44,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/admin/ops/flags/{key}", h.setPlatformFlag)
 	mux.HandleFunc("GET /api/v1/admin/ops/runtime", h.runtime)
 	mux.HandleFunc("GET /api/v1/admin/product/metrics", h.productMetrics)
+	mux.HandleFunc("GET /api/v1/admin/beta/readiness", h.betaReadiness)
 }
 
 func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +158,15 @@ func (h *HTTPHandler) runtime(w http.ResponseWriter, r *http.Request) {
 	snapshot := h.runtimeSnapshot()
 	h.audit(r, principal, "runtime_metrics_view", "runtime_metrics", "", "")
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *HTTPHandler) betaReadiness(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.principal(w, r, "owner")
+	if !ok { return }
+	readiness, err := h.service.GetBetaReadiness(r.Context(), principal)
+	if err != nil { h.domain(w, err); return }
+	h.audit(r, principal, "beta_readiness_view", "beta_readiness", "", "")
+	writeJSON(w, http.StatusOK, readiness)
 }
 
 func (h *HTTPHandler) productMetrics(w http.ResponseWriter, r *http.Request) {
