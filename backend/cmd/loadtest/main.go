@@ -140,6 +140,7 @@ func runWebSockets(base, token string, count int) {
 	fmt.Printf("websocket connections=%d successful=%d failed=%d wall=%s",count,len(latencies),failures,time.Since(started))
 	if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))}
 	fmt.Println()
+	if failures > 0 { os.Exit(1) }
 }
 
 func runReconnectStorm(base, token string, workers, rounds int) {
@@ -208,7 +209,7 @@ func issueTicket(base,token string)(string,error){
 func toWS(base,ticket string)(string,error){u,err:=url.Parse(base);if err!=nil{return "",err};if u.Scheme=="https"{u.Scheme="wss"}else{u.Scheme="ws"};u.Path="/api/v1/realtime";u.RawQuery=url.Values{"ticket":[]string{ticket}}.Encode();return u.String(),nil}
 func browserOrigin(base string)string{u,err:=url.Parse(base);if err!=nil{return base};u.Path="";u.RawQuery="";u.Fragment="";return strings.TrimRight(u.String(),"/")}
 
-func printResults(results <-chan result,total int,wall time.Duration){latencies:=make([]time.Duration,0,total);statuses:=map[int]int{};var failures atomic.Int64;for item:=range results{if item.Err!=nil{failures.Add(1);continue};statuses[item.Status]++;latencies=append(latencies,item.Duration)};sort.Slice(latencies,func(i,j int)bool{return latencies[i]<latencies[j]});fmt.Printf("requests=%d completed=%d failed=%d wall=%s rps=%.1f statuses=%v",total,len(latencies),failures.Load(),wall,float64(len(latencies))/wall.Seconds(),statuses);if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))};fmt.Println()}
+func printResults(results <-chan result,total int,wall time.Duration){latencies:=make([]time.Duration,0,total);statuses:=map[int]int{};var failures atomic.Int64;for item:=range results{if item.Err!=nil{failures.Add(1);continue};statuses[item.Status]++;latencies=append(latencies,item.Duration)};sort.Slice(latencies,func(i,j int)bool{return latencies[i]<latencies[j]});fmt.Printf("requests=%d completed=%d failed=%d wall=%s rps=%.1f statuses=%v",total,len(latencies),failures.Load(),wall,float64(len(latencies))/wall.Seconds(),statuses);if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))};fmt.Println();bad:=failures.Load()>0;for status,count:=range statuses{if status<200||status>=400{fmt.Fprintf(os.Stderr,"unexpected status %d count=%d\n",status,count);bad=true}};if bad{os.Exit(1)}}
 func percentile(values []time.Duration,p float64)time.Duration{if len(values)==0{return 0};index:=int(float64(len(values)-1)*p);if index<0{index=0};if index>=len(values){index=len(values)-1};return values[index]}
 func newUUID()string{raw:=make([]byte,16);if _,err:=rand.Read(raw);err!=nil{panic(err)};raw[6]=(raw[6]&0x0f)|0x40;raw[8]=(raw[8]&0x3f)|0x80;value:=hex.EncodeToString(raw);return value[0:8]+"-"+value[8:12]+"-"+value[12:16]+"-"+value[16:20]+"-"+value[20:32]}
 func env(key,fallback string)string{if value:=strings.TrimSpace(os.Getenv(key));value!=""{return value};return fallback}
