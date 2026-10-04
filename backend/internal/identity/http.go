@@ -14,6 +14,7 @@ import (
 type HTTPHandler struct {
 	service      *Service
 	yandex       *YandexOAuth
+	passkeys     *PasskeyService
 	logger       *slog.Logger
 	secureCookie bool
 	clientIP     func(*http.Request) string
@@ -24,6 +25,7 @@ func NewHTTPHandler(service *Service, logger *slog.Logger, secureCookie bool) *H
 }
 
 func (h *HTTPHandler) SetYandexOAuth(yandex *YandexOAuth) { h.yandex = yandex }
+func (h *HTTPHandler) SetPasskeyService(passkeys *PasskeyService) { h.passkeys = passkeys }
 func (h *HTTPHandler) SetClientIPResolver(resolve func(*http.Request) string) {
 	if resolve != nil { h.clientIP = resolve }
 }
@@ -33,6 +35,10 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/complete", h.completeEmail)
 	mux.HandleFunc("GET /api/v1/auth/yandex/start", h.startYandex)
 	mux.HandleFunc("GET /api/v1/auth/yandex/callback", h.completeYandex)
+	mux.HandleFunc("POST /api/v1/auth/passkeys/register/begin", h.beginPasskeyRegistration)
+	mux.HandleFunc("POST /api/v1/auth/passkeys/register/finish/{ceremony_id}", h.finishPasskeyRegistration)
+	mux.HandleFunc("POST /api/v1/auth/passkeys/login/begin", h.beginPasskeyLogin)
+	mux.HandleFunc("POST /api/v1/auth/passkeys/login/finish/{ceremony_id}", h.finishPasskeyLogin)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refreshSession)
 	mux.HandleFunc("GET /api/v1/auth/session", h.currentSession)
 	mux.HandleFunc("GET /api/v1/auth/sessions", h.listSessions)
