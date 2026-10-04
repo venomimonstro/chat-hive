@@ -80,7 +80,7 @@ func (s *PostgresStore) CreateSession(ctx context.Context, input CreateSessionIn
 		RETURNING id::text`
 	var sessionID string
 	if err := s.pool.QueryRow(ctx, query,input.UserID,input.AuthMethod,input.RefreshTokenHash,input.AccessTokenHash,input.UserAgent,input.IP,input.AccessExpiresAt,input.RefreshExpiresAt).Scan(&sessionID); err != nil { return "", err }
-	_, _ = s.pool.Exec(ctx, `INSERT INTO security_events(event_type,severity,user_id,session_id,source_ip,subject_type,subject_id) VALUES('session_created','info',$1::uuid,$2::uuid,NULLIF($3,'')::inet,'session',$2)`, input.UserID, sessionID, input.IP)
+	_, _ = s.pool.Exec(ctx, `INSERT INTO security_events(event_type,severity,user_id,session_id,source_ip,subject_type,subject_id,metadata) VALUES('session_created','info',$1::uuid,$2::uuid,NULLIF($3,'')::inet,'session',$2,jsonb_build_object('auth_method',$4))`, input.UserID, sessionID, input.IP, input.AuthMethod)
 	return sessionID, nil
 }
 
