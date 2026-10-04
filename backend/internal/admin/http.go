@@ -55,7 +55,7 @@ func (h *HTTPHandler) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) listCases(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "moderator", "senior_moderator", "security", "legal", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "moderator", "senior_moderator", "security", "legal", "owner")
 	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	items, err := h.service.ListCases(r.Context(), principal, limit)
@@ -65,7 +65,7 @@ func (h *HTTPHandler) listCases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) listSecurityEvents(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "owner")
 	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	severity := strings.TrimSpace(r.URL.Query().Get("severity"))
@@ -76,7 +76,7 @@ func (h *HTTPHandler) listSecurityEvents(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) listSecurityAlerts(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "owner")
 	if !ok { return }
 	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
@@ -87,7 +87,7 @@ func (h *HTTPHandler) listSecurityAlerts(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) ackSecurityAlert(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "owner")
 	if !ok { return }
 	eventID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("event_id")), 10, 64)
 	if err != nil || eventID <= 0 {
@@ -110,7 +110,7 @@ func (h *HTTPHandler) ackSecurityAlert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) securitySummary(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "owner")
 	if !ok { return }
 	summary, err := h.service.GetSecuritySummary(r.Context(), principal)
 	if err != nil { h.domain(w, err); return }
@@ -119,7 +119,7 @@ func (h *HTTPHandler) securitySummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) listPlatformFlags(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "system_admin", "owner")
 	if !ok { return }
 	items, err := h.service.ListPlatformFlags(r.Context(), principal)
 	if err != nil { h.domain(w, err); return }
@@ -128,7 +128,7 @@ func (h *HTTPHandler) listPlatformFlags(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *HTTPHandler) setPlatformFlag(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "system_admin", "owner")
 	if !ok { return }
 	var body struct {
 		Enabled bool   `json:"enabled"`
@@ -149,7 +149,7 @@ func (h *HTTPHandler) setPlatformFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) runtime(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "security", "system_admin", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "security", "system_admin", "owner")
 	if !ok { return }
 	if h.runtimeSnapshot == nil {
 		writeError(w, http.StatusServiceUnavailable, "runtime_metrics_unavailable", "Runtime metrics unavailable")
@@ -161,7 +161,7 @@ func (h *HTTPHandler) runtime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) betaReadiness(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "owner")
 	if !ok { return }
 	readiness, err := h.service.GetBetaReadiness(r.Context(), principal)
 	if err != nil { h.domain(w, err); return }
@@ -170,7 +170,7 @@ func (h *HTTPHandler) betaReadiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) productMetrics(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "owner")
 	if !ok { return }
 	days, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("days")))
 	metrics, err := h.service.GetProductMetrics(r.Context(), principal, days)
@@ -180,7 +180,7 @@ func (h *HTTPHandler) productMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
-	principal, ok := h.principal(w, r, "senior_moderator", "security", "legal", "owner")
+	principal, ok := h.privilegedPrincipal(w, r, "senior_moderator", "security", "legal", "owner")
 	if !ok { return }
 	var body struct {
 		Decision string `json:"decision"`
