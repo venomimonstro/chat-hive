@@ -10,6 +10,15 @@ import { deletePasskey, listPasskeys, PasskeyInfo, registerPasskey } from '../..
 
 const DELETE_PHRASE = 'DELETE MY CHAT ACCOUNT';
 
+function authMethodLabel(method: DeviceSession['auth_method']) {
+  switch (method) {
+    case 'passkey': return 'Passkey';
+    case 'yandex': return 'Яндекс ID';
+    case 'email': return 'Email';
+    default: return 'Старая сессия';
+  }
+}
+
 function deviceLabel(userAgent: string) {
   const ua = userAgent.toLowerCase();
   if (ua.includes('android')) return 'Android';
@@ -170,7 +179,7 @@ export function SecuritySessions() {
                     <strong>{deviceLabel(session.user_agent)}</strong>
                     {isCurrent ? <span>Текущая</span> : null}
                   </div>
-                  <small>{session.last_ip || 'IP не определён'} · активность {new Date(session.last_seen_at).toLocaleString('ru-RU')}</small>
+                  <small>{authMethodLabel(session.auth_method)} · {session.last_ip || 'IP не определён'} · активность {new Date(session.last_seen_at).toLocaleString('ru-RU')}</small>
                   <details>
                     <summary>Подробнее</summary>
                     <p>{session.user_agent || 'User-Agent не передан'}</p>
