@@ -221,12 +221,16 @@ func (h *HTTPHandler) authorizePrincipal(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 		return Principal{}, false
 	}
-	if requirePasskeyForPrivileged && hasAnyRole(principal, "owner", "security") && session.AuthMethod != "passkey" {
+	if requirePasskeyForPrivileged && requiresPasskeyStepUp(principal, session) {
 		h.audit(r, principal, "privileged_step_up_required", "session", session.SessionID, session.AuthMethod)
 		writeError(w, http.StatusForbidden, "passkey_required", "Passkey sign-in is required for privileged admin access")
 		return Principal{}, false
 	}
 	return principal, true
+}
+
+func requiresPasskeyStepUp(principal Principal, session identity.AuthenticatedSession) bool {
+	return hasAnyRole(principal, "owner", "security") && session.AuthMethod != "passkey"
 }
 
 func (h *HTTPHandler) audit(r *http.Request, principal Principal, action, targetType, targetID, reason string) {
