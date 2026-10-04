@@ -44,7 +44,7 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 02 | Design system and responsive application shell | DONE |
 | 03 | Identity: email magic-link, session rotation/revocation, Yandex ID, SMTP, passkeys | IN PROGRESS |
 | 04 | Onboarding: username, profile, interests | DONE |
-| 05 | Profiles and social graph | IN PROGRESS |
+| 05 | Profiles and social graph | DONE |
 | 06 | Realtime gateway | DONE |
 | 07 | Direct messaging core | DONE |
 | 08 | Reliable messaging/offline outbox/idempotency | DONE |
@@ -87,7 +87,7 @@ Implemented: username/profile/bio/interests, public profile, edit profile, follo
 
 Public profiles and their public posts are guest-readable. Follow/message/block remain authenticated actions and use a safe internal return path through login/onboarding.
 
-Remaining: explicit mutual/friend semantics only if product validation still requires a distinct relationship; composite pagination only when measured scale requires it.
+MVP social graph is complete. CHAT intentionally uses Follow plus direct/group communication instead of inventing a separate Friend entity before Alpha evidence requires it. A distinct mutual/friend relation and composite pagination are deferred product/scale decisions, not release blockers.
 
 ### Messaging / reliability
 
@@ -174,9 +174,9 @@ Production uses a single Caddy HTTPS ingress. Browser API requests default to sa
 
 ### Performance / DR
 
-A Go load harness supports health bursts, idempotent message bursts and WebSocket connection tests and reports RPS/p50/p95/p99. Actual server capacity numbers must be measured on deployment hardware before Sprint 25 closes.
+A Go load harness supports health bursts, idempotent message bursts and WebSocket connection tests and reports RPS/p50/p95/p99. Protected runtime metrics expose active WebSocket connections, dropped realtime events and PostgreSQL pool pressure. Automatic hysteresis-based load shedding limits Feed/Discovery/Search/media at 85% DB pool utilization and recovers below 70%, while Messaging remains outside the shed class. Actual server capacity numbers must still be measured on deployment hardware before Sprint 25 closes.
 
-DR scripts create integrity-checked PostgreSQL custom-format backups and media archives and require an explicit separate target + destructive confirmation for restore. Sprint 27 closes only after an actual restore drill succeeds.
+DR scripts create integrity-checked PostgreSQL custom-format backups and media archives and require an explicit separate target + destructive confirmation for restore. `ops/backup/drill.sh` now runs a non-public isolated PostgreSQL restore, verifies critical durable tables and reports measured RTO. Sprint 27 closes only after this drill succeeds against an actual server backup.
 
 ## Remaining release-critical work
 
