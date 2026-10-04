@@ -184,6 +184,58 @@ func (s *PostgresStore) SetPlatformFlag(ctx context.Context, key string, enabled
 	return tx.Commit(ctx)
 }
 
+func (s *PostgresStore) BetaReadiness(ctx context.Context) (BetaReadiness, error) {
+	var result BetaReadiness
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*)
+			 FROM admin_users au
+			 WHERE au.status='active'
+			   AND EXISTS (
+			       SELECT 1 FROM admin_user_roles r
+			       WHERE r.user_id=au.user_id AND r.role IN ('owner','security')
+			   )
+			   AND NOT EXISTS (
+			       SELECT 1 FROM passkey_credentials p WHERE p.user_id=au.user_id
+			   )),
+			(SELECT count(*)
+			 FROM security_alerts a
+			 JOIN security_events e ON e.id=a.event_id
+			 WHERE a.status='open' AND e.severity IN ('high','critical')),
+			(SELECT count(*)
+			 FROM moderation_cases
+			 WHERE status IN ('open','reviewing') AND severity='critical')
+	`).Scan(
+		&result.PrivilegedWithoutPasskey,
+		&result.OpenHighCriticalAlerts,
+		&result.OpenCriticalCases,
+	)
+	if err != nil { return BetaReadiness{}, err }
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT key
+		FROM platform_feature_flags
+		WHERE enabled=FALSE
+		ORDER BY key`)
+	if err != nil { return BetaReadiness{}, err }
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		if err:=rows.Scan(&key);err!=nil{return BetaReadiness{},err}
+		result.DisabledFeatures=append(result.DisabledFeatures,key)
+	}
+	if err:=rows.Err();err!=nil{return BetaReadiness{},err}
+
+	result.InternalReady =
+		result.PrivilegedWithoutPasskey==0 &&
+		result.OpenHighCriticalAlerts==0 &&
+		result.OpenCriticalCases==0 &&
+		len(result.DisabledFeatures)==0
+	result.ExternalRequired=[]string{"independent_pentest","legal_compliance_signoff"}
+	result.GeneratedAt=time.Now().UTC()
+	return result,nil
+}
+
 func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMetrics, error) {
 	var result ProductMetrics
 	result.WindowDays = days
