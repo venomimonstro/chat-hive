@@ -184,6 +184,94 @@ func (s *PostgresStore) SetPlatformFlag(ctx context.Context, key string, enabled
 	return tx.Commit(ctx)
 }
 
+func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMetrics, error) {
+	var result ProductMetrics
+	result.WindowDays = days
+	err := s.pool.QueryRow(ctx, `
+		WITH
+		bounds AS (
+			SELECT now() AS now_at,
+			       now() - make_interval(days => $1) AS window_start
+		),
+		first_messages AS (
+			SELECT sender_id AS user_id,min(created_at) AS first_at
+			FROM messages
+			WHERE sender_id IS NOT NULL
+			GROUP BY sender_id
+		),
+		first_posts AS (
+			SELECT author_id AS user_id,min(created_at) AS first_at
+			FROM posts
+			WHERE deleted_at IS NULL
+			GROUP BY author_id
+		),
+		activity AS (
+			SELECT sender_id AS user_id,created_at FROM messages WHERE sender_id IS NOT NULL
+			UNION ALL
+			SELECT author_id,created_at FROM posts WHERE deleted_at IS NULL
+			UNION ALL
+			SELECT follower_id,created_at FROM follows
+			UNION ALL
+			SELECT user_id,last_seen_at FROM sessions
+		),
+		d1_cohort AS (
+			SELECT u.id,u.created_at
+			FROM users u,bounds b
+			WHERE u.created_at >= b.now_at - make_interval(days => $1 + 1)
+			  AND u.created_at <  b.now_at - interval '1 day'
+		),
+		d7_cohort AS (
+			SELECT u.id,u.created_at
+			FROM users u,bounds b
+			WHERE u.created_at >= b.now_at - make_interval(days => $1 + 7)
+			  AND u.created_at <  b.now_at - interval '7 days'
+		)
+		SELECT
+			(SELECT count(*) FROM users u,bounds b WHERE u.created_at>=b.window_start),
+			(SELECT count(*) FROM profiles p,bounds b WHERE p.onboarding_completed_at>=b.window_start),
+			(SELECT count(*) FROM first_messages f,bounds b WHERE f.first_at>=b.window_start),
+			(SELECT count(*) FROM first_posts f,bounds b WHERE f.first_at>=b.window_start),
+			(SELECT count(DISTINCT follower_id) FROM follows f,bounds b WHERE f.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='public_view' AND g.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='login_started' AND g.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='signup_completed' AND g.created_at>=b.window_start),
+			(SELECT count(*) FROM growth_events g,bounds b WHERE g.event_name='invite_join' AND g.created_at>=b.window_start),
+			(SELECT count(DISTINCT a.user_id) FROM activity a,bounds b WHERE a.created_at>=b.window_start),
+			(SELECT count(*) FROM d1_cohort),
+			(SELECT count(*) FROM d1_cohort c WHERE EXISTS (
+				SELECT 1 FROM activity a
+				WHERE a.user_id=c.id AND a.created_at>=c.created_at+interval '1 day'
+				  AND a.created_at<c.created_at+interval '2 days'
+			)),
+			(SELECT count(*) FROM d7_cohort),
+			(SELECT count(*) FROM d7_cohort c WHERE EXISTS (
+				SELECT 1 FROM activity a
+				WHERE a.user_id=c.id AND a.created_at>=c.created_at+interval '7 days'
+				  AND a.created_at<c.created_at+interval '8 days'
+			)),
+			(SELECT count(*) FROM moderation_cases WHERE status IN ('open','reviewing'))
+	`, days).Scan(
+		&result.Registrations,
+		&result.OnboardingCompleted,
+		&result.FirstMessageUsers,
+		&result.FirstPostUsers,
+		&result.FollowCreators,
+		&result.PublicViews,
+		&result.LoginStarts,
+		&result.SignupCompletedEvents,
+		&result.InviteJoins,
+		&result.ActiveUsers,
+		&result.D1Eligible,
+		&result.D1Retained,
+		&result.D7Eligible,
+		&result.D7Retained,
+		&result.OpenModerationCases,
+	)
+	if err != nil { return ProductMetrics{}, err }
+	result.GeneratedAt=time.Now().UTC()
+	return result,nil
+}
+
 func (s *PostgresStore) SecuritySummary(ctx context.Context) (SecuritySummary, error) {
 	var result SecuritySummary
 	err := s.pool.QueryRow(ctx, `
