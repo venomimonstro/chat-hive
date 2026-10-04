@@ -361,6 +361,7 @@ func (h *HTTPHandler) writeSessionTokens(w http.ResponseWriter, tokens SessionTo
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id":           tokens.UserID,
 		"session_id":        tokens.SessionID,
+		"auth_method":       tokens.AuthMethod,
 		"access_token":      tokens.AccessToken,
 		"access_expires_at": tokens.AccessExpiry,
 	})
