@@ -95,6 +95,26 @@ type RuntimeSnapshot struct {
 	GeneratedAt         time.Time `json:"generated_at"`
 }
 
+type ProductMetrics struct {
+	WindowDays             int       `json:"window_days"`
+	Registrations          int64     `json:"registrations"`
+	OnboardingCompleted    int64     `json:"onboarding_completed"`
+	FirstMessageUsers      int64     `json:"first_message_users"`
+	FirstPostUsers         int64     `json:"first_post_users"`
+	FollowCreators         int64     `json:"follow_creators"`
+	PublicViews            int64     `json:"public_views"`
+	LoginStarts            int64     `json:"login_starts"`
+	SignupCompletedEvents  int64     `json:"signup_completed_events"`
+	InviteJoins            int64     `json:"invite_joins"`
+	ActiveUsers            int64     `json:"active_users"`
+	D1Eligible             int64     `json:"d1_eligible"`
+	D1Retained             int64     `json:"d1_retained"`
+	D7Eligible             int64     `json:"d7_eligible"`
+	D7Retained             int64     `json:"d7_retained"`
+	OpenModerationCases    int64     `json:"open_moderation_cases"`
+	GeneratedAt            time.Time `json:"generated_at"`
+}
+
 type AuditInput struct {
 	ActorUserID string
 	ActorRole   string
@@ -115,6 +135,7 @@ type Store interface {
 	ListPlatformFlags(ctx context.Context) ([]PlatformFlag, error)
 	SetPlatformFlag(ctx context.Context, key string, enabled bool, actor Principal, reason string) error
 	SecuritySummary(ctx context.Context) (SecuritySummary, error)
+	ProductMetrics(ctx context.Context, days int) (ProductMetrics, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
 }
@@ -182,6 +203,16 @@ func allowedPlatformFlag(key string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *Service) GetProductMetrics(ctx context.Context, principal Principal, days int) (ProductMetrics, error) {
+	if !hasAnyRole(principal, "owner") { return ProductMetrics{}, ErrForbidden }
+	switch days {
+	case 7, 30, 90:
+	default:
+		days = 7
+	}
+	return s.store.ProductMetrics(ctx, days)
 }
 
 func (s *Service) GetSecuritySummary(ctx context.Context, principal Principal) (SecuritySummary, error) {
