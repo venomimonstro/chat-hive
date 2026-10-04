@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/venomimonstro/chat-hive/backend/internal/authhttp"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
