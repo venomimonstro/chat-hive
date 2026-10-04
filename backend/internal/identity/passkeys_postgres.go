@@ -198,3 +198,18 @@ func (s *PostgresStore) DeletePasskeyCredential(ctx context.Context, userID, enc
 
 	return tx.Commit(ctx)
 }
+
+
+func (s *PostgresStore) IsPrivilegedPasskeyAccount(ctx context.Context, userID string) (bool, error) {
+	var privileged bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM admin_users au
+			JOIN admin_user_roles ar ON ar.user_id=au.user_id
+			WHERE au.user_id=$1::uuid
+			  AND au.status='active'
+			  AND ar.role IN ('owner','security')
+		)`, userID).Scan(&privileged)
+	return privileged, err
+}
