@@ -43,7 +43,7 @@ func (f *fakeStore) FindSessionByAccessTokenHash(_ context.Context, tokenHash []
 	if f.sessionRevoked || len(f.session.AccessTokenHash) == 0 || !bytes.Equal(tokenHash, f.session.AccessTokenHash) {
 		return AuthenticatedSession{}, ErrInvalidSession
 	}
-	return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, ExpiresAt: f.session.AccessExpiresAt}, nil
+	return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, AuthMethod: f.session.AuthMethod, ExpiresAt: f.session.AccessExpiresAt}, nil
 }
 func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInput) (AuthenticatedSession, error) {
 	if f.sessionRevoked {
@@ -55,7 +55,7 @@ func (f *fakeStore) RotateRefreshToken(_ context.Context, input RotateSessionInp
 		f.session.AccessTokenHash = append([]byte(nil), input.NewAccessTokenHash...)
 		f.session.AccessExpiresAt = input.AccessExpiresAt
 		f.session.RefreshExpiresAt = input.RefreshExpiresAt
-		return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, ExpiresAt: input.AccessExpiresAt}, nil
+		return AuthenticatedSession{UserID: f.session.UserID, SessionID: f.sessionID, AuthMethod: f.session.AuthMethod, ExpiresAt: input.AccessExpiresAt}, nil
 	}
 	for _, consumed := range f.refreshHistory {
 		if bytes.Equal(input.OldRefreshTokenHash, consumed) {
@@ -71,6 +71,7 @@ func (f *fakeStore) ListSessions(_ context.Context, userID string, _ time.Time) 
 	}
 	return []DeviceSession{{
 		SessionID: f.sessionID,
+		AuthMethod: f.session.AuthMethod,
 		UserAgent: f.session.UserAgent,
 		LastIP: f.session.IP,
 		CreatedAt: f.session.AccessExpiresAt.Add(-15 * time.Minute),
@@ -124,6 +125,9 @@ func TestMagicLinkIsHashedAndSingleUse(t *testing.T) {
 	if tokens.AccessToken == "" || tokens.RefreshToken == "" || tokens.AccessToken == tokens.RefreshToken {
 		t.Fatal("expected independent access and refresh tokens")
 	}
+	if tokens.AuthMethod != "email" || store.session.AuthMethod != "email" {
+		t.Fatalf("expected email auth method, tokens=%q store=%q", tokens.AuthMethod, store.session.AuthMethod)
+	}
 	if len(store.session.AccessTokenHash) == 0 || len(store.session.RefreshTokenHash) == 0 {
 		t.Fatal("session token hashes were not persisted")
 	}
@@ -140,7 +144,7 @@ func TestAccessSessionCanBeValidatedListedAndRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate access token: %v", err)
 	}
-	if session.UserID != tokens.UserID || session.SessionID != tokens.SessionID {
+	if session.UserID != tokens.UserID || session.SessionID != tokens.SessionID || session.AuthMethod != "email" {
 		t.Fatalf("unexpected authenticated session: %+v", session)
 	}
 
@@ -169,6 +173,9 @@ func TestRefreshRotationRejectsReplayAndRevokesSession(t *testing.T) {
 	}
 	if rotated.RefreshToken == original.RefreshToken || rotated.AccessToken == original.AccessToken {
 		t.Fatal("refresh must rotate both access and refresh credentials")
+	}
+	if rotated.AuthMethod != "email" {
+		t.Fatalf("refresh changed auth method: %q", rotated.AuthMethod)
 	}
 	if _, err := service.AuthenticateAccessToken(context.Background(), original.AccessToken); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("old access token remained valid after rotation: %v", err)
