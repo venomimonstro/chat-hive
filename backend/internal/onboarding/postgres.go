@@ -72,6 +72,11 @@ func (s *PostgresStore) Complete(ctx context.Context, input CompleteInput) (Prof
 		return Profile{}, err
 	}
 
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO growth_events(event_name,user_id)
+		VALUES('signup_completed',$1::uuid)
+		ON CONFLICT DO NOTHING`, input.UserID); err != nil { return Profile{}, err }
+
 	if _, err := tx.Exec(ctx, `DELETE FROM user_interests WHERE user_id = $1::uuid`, input.UserID); err != nil { return Profile{}, err }
 	for _, slug := range input.Interests {
 		if _, err := tx.Exec(ctx, `INSERT INTO user_interests (user_id, interest_slug) VALUES ($1::uuid, $2)`, input.UserID, slug); err != nil { return Profile{}, err }
