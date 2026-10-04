@@ -85,6 +85,17 @@ func main() {
 		fatal("lookup account: " + err.Error())
 	}
 
+	if role == "owner" || role == "security" {
+		var passkeys int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM passkey_credentials WHERE user_id=$1::uuid`, userID).Scan(&passkeys); err != nil {
+			fatal("check passkey coverage: " + err.Error())
+		}
+		if passkeys == 0 {
+			fatal("owner/security role requires at least one existing passkey")
+		}
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO admin_users(user_id,status)
 		VALUES($1::uuid,'active')
