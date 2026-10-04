@@ -23,6 +23,25 @@ else
   printf 'WARNING: clean migration verification skipped explicitly. Do not use this setting for a release record.\n' >&2
 fi
 
+info "checking production compose topology"
+command -v docker >/dev/null 2>&1 || fail "docker is required for production compose validation"
+docker compose -f docker-compose.prod.yml config >/dev/null
+
+grep -q '^  caddy:' docker-compose.prod.yml || fail "production compose must define caddy ingress"
+grep -q '"80:80"' docker-compose.prod.yml || fail "caddy HTTP ingress is missing"
+grep -q '"443:443"' docker-compose.prod.yml || fail "caddy HTTPS ingress is missing"
+
+for service in postgres redis nats api web; do
+  block="$(awk -v service="$service" '
+    $0 ~ "^  " service ":" {inside=1; next}
+    inside && $0 ~ "^  [a-zA-Z0-9_-]+:" {exit}
+    inside {print}
+  ' docker-compose.prod.yml)"
+  if printf '%s\n' "$block" | grep -q '^[[:space:]]*ports:'; then
+    fail "$service must not publish host ports in production"
+  fi
+done
+
 if command -v go >/dev/null 2>&1; then
   info "checking Go formatting"
   unformatted="$(gofmt -l backend || true)"
