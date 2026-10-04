@@ -167,6 +167,15 @@ func (h *HTTPHandler) deletePasskey(w http.ResponseWriter, r *http.Request) {
 	}
 	session, ok := h.authenticateRequest(w, r)
 	if !ok { return }
+	if err := h.passkeys.AuthorizeCredentialManagement(r.Context(), session.UserID, session.AuthMethod); err != nil {
+		if errors.Is(err, ErrPasskeyStepUp) {
+			writeAPIError(w, http.StatusForbidden, "passkey_required", "Passkey sign-in is required to manage passkeys")
+			return
+		}
+		h.logger.Error("passkey management authorization failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
 	err := h.passkeys.DeleteCredential(r.Context(), session.UserID, r.PathValue("credential_id"))
 	if err != nil {
 		if errors.Is(err, ErrPasskeyUnavailable) {
@@ -187,6 +196,15 @@ func (h *HTTPHandler) beginPasskeyRegistration(w http.ResponseWriter, r *http.Re
 	}
 	session, ok := h.authenticateRequest(w, r)
 	if !ok { return }
+	if err := h.passkeys.AuthorizeCredentialManagement(r.Context(), session.UserID, session.AuthMethod); err != nil {
+		if errors.Is(err, ErrPasskeyStepUp) {
+			writeAPIError(w, http.StatusForbidden, "passkey_required", "Passkey sign-in is required to manage passkeys")
+			return
+		}
+		h.logger.Error("passkey management authorization failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
 
 	options, ceremonyID, err := h.passkeys.BeginRegistration(r.Context(), session.UserID)
 	if err != nil {
