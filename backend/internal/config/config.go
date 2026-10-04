@@ -22,6 +22,7 @@ type Config struct {
 	SMTPPassword      string
 	SMTPFrom          string
 	CookieSecure      bool
+	TrustedProxyCIDRs string
 }
 
 func Load() (Config, error) {
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 		SMTPPassword:      env("CHAT_SMTP_PASSWORD", ""),
 		SMTPFrom:          strings.TrimSpace(env("CHAT_SMTP_FROM", "")),
 		CookieSecure:      environment != "development" && environment != "test",
+		TrustedProxyCIDRs: strings.TrimSpace(env("CHAT_TRUSTED_PROXY_CIDRS", "")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -78,6 +80,9 @@ func Load() (Config, error) {
 		}
 		if strings.Contains(strings.ToLower(cfg.SMTPFrom), "example.com") {
 			return Config{}, fmt.Errorf("CHAT_SMTP_FROM must not use example.com in production")
+		}
+		if cfg.TrustedProxyCIDRs == "" {
+			return Config{}, fmt.Errorf("CHAT_TRUSTED_PROXY_CIDRS is required in production")
 		}
 	}
 	return cfg, nil
