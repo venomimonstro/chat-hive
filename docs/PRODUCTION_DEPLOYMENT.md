@@ -17,8 +17,9 @@ This runbook is intentionally compatible with the project's direct-to-main/no-Gi
 2. Replace every placeholder secret with a unique high-entropy value.
 3. Never store `.env.production` in Git.
 4. Keep `NEXT_PUBLIC_API_BASE_URL` blank for the normal same-origin deployment.
-5. Configure SMTP. Production API fails closed if SMTP is missing.
-6. Configure Yandex ID only after the OAuth application redirect URI exactly matches the public HTTPS callback.
+5. Keep `CHAT_TRUSTED_PROXY_CIDRS=172.31.238.2/32` unless you intentionally change the fixed Caddy address in `docker-compose.prod.yml`; do not widen it to the whole edge subnet.
+6. Configure SMTP. Production API fails closed if SMTP is missing.
+7. Configure Yandex ID only after the OAuth application redirect URI exactly matches the public HTTPS callback.
 
 ## 3. Frontend dependency lock
 
