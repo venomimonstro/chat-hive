@@ -165,6 +165,33 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, rawToken, userAgent, r
 	return tokens, nil
 }
 
+func (s *Service) CreateSessionForUser(ctx context.Context, userID, userAgent, requestIP string) (SessionTokens, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return SessionTokens{}, ErrInvalidSession
+	}
+	now := s.now()
+	tokens, accessHash, refreshHash, err := s.newSessionTokens(now)
+	if err != nil {
+		return SessionTokens{}, err
+	}
+	tokens.UserID = userID
+	sessionID, err := s.store.CreateSession(ctx, CreateSessionInput{
+		UserID:           userID,
+		AccessTokenHash:  accessHash,
+		RefreshTokenHash: refreshHash,
+		UserAgent:        truncate(userAgent, 512),
+		IP:               requestIP,
+		AccessExpiresAt:  tokens.AccessExpiry,
+		RefreshExpiresAt: tokens.RefreshExpiry,
+	})
+	if err != nil {
+		return SessionTokens{}, fmt.Errorf("create session: %w", err)
+	}
+	tokens.SessionID = sessionID
+	return tokens, nil
+}
+
 func (s *Service) RefreshSession(ctx context.Context, rawRefreshToken string) (SessionTokens, error) {
 	rawRefreshToken = strings.TrimSpace(rawRefreshToken)
 	if rawRefreshToken == "" || len(rawRefreshToken) > 512 {
