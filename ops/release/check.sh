@@ -25,7 +25,8 @@ fi
 
 info "checking production compose topology"
 command -v docker >/dev/null 2>&1 || fail "docker is required for production compose validation"
-docker compose -f docker-compose.prod.yml config >/dev/null
+[[ -s .env.production.example ]] || fail "missing .env.production.example"
+docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null
 
 grep -q '^  caddy:' docker-compose.prod.yml || fail "production compose must define caddy ingress"
 grep -q '"80:80"' docker-compose.prod.yml || fail "caddy HTTP ingress is missing"
@@ -74,6 +75,7 @@ if [[ "${CHAT_ENV:-}" == "production" ]]; then
   [[ "${CHAT_WEB_ORIGIN:-}" == https://* ]] || fail "CHAT_WEB_ORIGIN must use HTTPS"
   [[ "${CHAT_MAGIC_LINK_BASE_URL:-}" == https://* ]] || fail "CHAT_MAGIC_LINK_BASE_URL must use HTTPS"
   [[ -n "${CHAT_SMTP_ADDR:-}" ]] || fail "CHAT_SMTP_ADDR is required"
+  [[ -n "${CHAT_TRUSTED_PROXY_CIDRS:-}" ]] || fail "CHAT_TRUSTED_PROXY_CIDRS is required"
   [[ -n "${CHAT_SMTP_FROM:-}" ]] || fail "CHAT_SMTP_FROM is required"
   [[ "${CHAT_SMTP_FROM,,}" != *example.com* ]] || fail "CHAT_SMTP_FROM still uses example.com"
 fi
