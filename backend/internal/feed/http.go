@@ -9,17 +9,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/venomimonstro/chat-hive/backend/internal/authhttp"
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
 type HTTPHandler struct {
 	service *Service
-	auth    *identity.Service
+	guard   *authhttp.Guard
 	logger  *slog.Logger
 }
 
 func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
-	return &HTTPHandler{service: service, auth: auth, logger: logger}
+	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -28,7 +29,7 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var before time.Time
 	if raw := strings.TrimSpace(r.URL.Query().Get("before")); raw != "" {
@@ -54,7 +55,7 @@ func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) feedback(w http.ResponseWriter, r *http.Request) {
-	session, ok := h.authenticate(w, r)
+	session, ok := h.guard.Required(w, r)
 	if !ok { return }
 	var body struct{ Signal string `json:"signal"` }
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
@@ -73,20 +74,6 @@ func (h *HTTPHandler) feedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (identity.AuthenticatedSession, bool) {
-	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || len(parts[1]) > 512 {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	session, err := h.auth.AuthenticateAccessToken(r.Context(), parts[1])
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return identity.AuthenticatedSession{}, false
-	}
-	return session, true
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
