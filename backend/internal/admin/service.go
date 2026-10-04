@@ -95,6 +95,16 @@ type RuntimeSnapshot struct {
 	GeneratedAt         time.Time `json:"generated_at"`
 }
 
+type BetaReadiness struct {
+	PrivilegedWithoutPasskey int64      `json:"privileged_without_passkey"`
+	OpenHighCriticalAlerts  int64      `json:"open_high_critical_alerts"`
+	OpenCriticalCases       int64      `json:"open_critical_cases"`
+	DisabledFeatures        []string   `json:"disabled_features"`
+	InternalReady           bool       `json:"internal_ready"`
+	ExternalRequired        []string   `json:"external_required"`
+	GeneratedAt             time.Time  `json:"generated_at"`
+}
+
 type ProductMetrics struct {
 	WindowDays             int       `json:"window_days"`
 	Registrations          int64     `json:"registrations"`
@@ -136,6 +146,7 @@ type Store interface {
 	SetPlatformFlag(ctx context.Context, key string, enabled bool, actor Principal, reason string) error
 	SecuritySummary(ctx context.Context) (SecuritySummary, error)
 	ProductMetrics(ctx context.Context, days int) (ProductMetrics, error)
+	BetaReadiness(ctx context.Context) (BetaReadiness, error)
 	ResolveCase(ctx context.Context, actor Principal, caseID, decision, reason string) error
 	WriteAudit(ctx context.Context, input AuditInput) error
 }
@@ -203,6 +214,11 @@ func allowedPlatformFlag(key string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *Service) GetBetaReadiness(ctx context.Context, principal Principal) (BetaReadiness, error) {
+	if !hasAnyRole(principal, "owner") { return BetaReadiness{}, ErrForbidden }
+	return s.store.BetaReadiness(ctx)
 }
 
 func (s *Service) GetProductMetrics(ctx context.Context, principal Principal, days int) (ProductMetrics, error) {
