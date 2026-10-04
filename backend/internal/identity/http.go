@@ -222,6 +222,15 @@ func (h *HTTPHandler) finishPasskeyRegistration(w http.ResponseWriter, r *http.R
 	}
 	session, ok := h.authenticateRequest(w, r)
 	if !ok { return }
+	if err := h.passkeys.AuthorizeCredentialManagement(r.Context(), session.UserID, session.AuthMethod); err != nil {
+		if errors.Is(err, ErrPasskeyStepUp) {
+			writeAPIError(w, http.StatusForbidden, "passkey_required", "Passkey sign-in is required to manage passkeys")
+			return
+		}
+		h.logger.Error("passkey management authorization failed", "error", err, "user_id", session.UserID)
+		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return
+	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	err := h.passkeys.FinishRegistration(r.Context(), session.UserID, r.PathValue("ceremony_id"), r)
