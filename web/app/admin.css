@@ -31,3 +31,20 @@
 
 .adminRuntimeMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0 22px}
 @media (max-width:900px){.adminRuntimeMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+.adminProductGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.adminProductMetric{display:grid;gap:6px}
+.adminProductMetric small{color:var(--muted);font-size:12px}
+.adminProductRetention{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.adminProductRetention .adminSecurityTop>strong{font-size:34px;line-height:1}
+.adminProductRetention p{margin:6px 0 0;color:var(--muted);font-size:13px}
+.adminProductFunnel{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:12px;margin:16px 0}
+.adminProductFunnel h2{margin:5px 0 12px}
+.adminProductFunnel dl{display:grid;gap:8px;margin:0}
+.adminProductFunnel dl>div{display:flex;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:1px solid var(--border)}
+.adminProductFunnel dt{color:var(--muted)}
+.adminProductFunnel dd{margin:0;font-weight:700;text-align:right}
+.adminProductBig{display:block;font-size:42px;line-height:1;margin:12px 0}
+@media (max-width:960px){.adminProductGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.adminProductFunnel{grid-template-columns:1fr}}
+@media (max-width:640px){.adminProductGrid,.adminProductRetention{grid-template-columns:1fr}}
