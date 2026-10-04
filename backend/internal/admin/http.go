@@ -201,6 +201,14 @@ func (h *HTTPHandler) decideCase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) principal(w http.ResponseWriter, r *http.Request, roles ...string) (Principal, bool) {
+	return h.authorizePrincipal(w, r, false, roles...)
+}
+
+func (h *HTTPHandler) privilegedPrincipal(w http.ResponseWriter, r *http.Request, roles ...string) (Principal, bool) {
+	return h.authorizePrincipal(w, r, true, roles...)
+}
+
+func (h *HTTPHandler) authorizePrincipal(w http.ResponseWriter, r *http.Request, requirePasskeyForPrivileged bool, roles ...string) (Principal, bool) {
 	session, ok := h.guard.Required(w, r)
 	if !ok { return Principal{}, false }
 	principal, err := h.service.Authorize(r.Context(), session.UserID, roles...)
@@ -211,6 +219,11 @@ func (h *HTTPHandler) principal(w http.ResponseWriter, r *http.Request, roles ..
 		}
 		h.logger.Error("admin authorization failed", "error", err, "user_id", session.UserID)
 		writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
+		return Principal{}, false
+	}
+	if requirePasskeyForPrivileged && hasAnyRole(principal, "owner", "security") && session.AuthMethod != "passkey" {
+		h.audit(r, principal, "privileged_step_up_required", "session", session.SessionID, session.AuthMethod)
+		writeError(w, http.StatusForbidden, "passkey_required", "Passkey sign-in is required for privileged admin access")
 		return Principal{}, false
 	}
 	return principal, true
