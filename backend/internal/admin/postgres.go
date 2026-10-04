@@ -206,13 +206,23 @@ func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMe
 			GROUP BY author_id
 		),
 		activity AS (
-			SELECT sender_id AS user_id,created_at FROM messages WHERE sender_id IS NOT NULL
+			SELECT m.sender_id AS user_id,m.created_at
+			FROM messages m,bounds b
+			WHERE m.sender_id IS NOT NULL
+			  AND m.created_at>=b.now_at-make_interval(days => $1 + 8)
 			UNION ALL
-			SELECT author_id,created_at FROM posts WHERE deleted_at IS NULL
+			SELECT p.author_id,p.created_at
+			FROM posts p,bounds b
+			WHERE p.deleted_at IS NULL
+			  AND p.created_at>=b.now_at-make_interval(days => $1 + 8)
 			UNION ALL
-			SELECT follower_id,created_at FROM follows
+			SELECT f.follower_id,f.created_at
+			FROM follows f,bounds b
+			WHERE f.created_at>=b.now_at-make_interval(days => $1 + 8)
 			UNION ALL
-			SELECT user_id,last_seen_at FROM sessions
+			SELECT s.user_id,s.last_seen_at
+			FROM sessions s,bounds b
+			WHERE s.last_seen_at>=b.now_at-make_interval(days => $1 + 8)
 		),
 		d1_cohort AS (
 			SELECT u.id,u.created_at
