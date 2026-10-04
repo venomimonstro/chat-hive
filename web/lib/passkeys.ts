@@ -98,6 +98,14 @@ async function authFetch(path: string, init: RequestInit, retry = true): Promise
     headers.set('Authorization', `Bearer ${refreshed.access_token}`);
     response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
   }
+  if (response.status === 403) {
+    const payload = await response.clone().json().catch(() => null);
+    if (payload?.error?.code === 'passkey_required') {
+      const next = window.location.pathname + window.location.search;
+      window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+      throw new Error('Для изменения passkey войдите с существующим passkey');
+    }
+  }
   return response;
 }
 
