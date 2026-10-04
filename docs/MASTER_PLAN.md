@@ -68,8 +68,8 @@ Development proceeds directly in `main` at owner request. GitHub Actions/CI are 
 | 26 | Security hardening + independent pentest gate | IN PROGRESS |
 | 27 | Backup/disaster recovery validation | IN PROGRESS |
 | 28 | Closed alpha | IN PROGRESS |
-| 29 | Product iteration from measured activation/retention | PLANNED |
-| 30 | Public beta gate | PLANNED |
+| 29 | Product iteration from measured activation/retention | IN PROGRESS |
+| 30 | Public beta gate | IN PROGRESS |
 
 ## Implemented product surface
 
@@ -289,3 +289,12 @@ Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27
 ## Closed Alpha execution
 
 Sprint 28 is now IN PROGRESS. The repository contains `ops/alpha/check.sh` for deployed HTTPS/health/security-header/auth-boundary smoke checks and `docs/CLOSED_ALPHA_RUNBOOK.md` for manual product validation. Alpha cannot move to DONE until the target server provides recorded evidence from release checks, clean migrations, WebAuthn device smoke, load/reconnect tests and an isolated restore drill.
+
+
+## Sprint 29 measurement layer
+
+Sprint 29 is IN PROGRESS before cohort data exists so measurement is ready on day one of Alpha. Owner-only Product Metrics are implemented in the Admin plane and combine durable database outcomes with privacy-minimized first-party acquisition events. The dashboard reports registration/onboarding/first-message/first-post/follow activity, active users, D1/D7 cohort retention, acquisition funnel and moderation pressure across 7/30/90-day windows. Sprint 29 closes only after real Alpha data drives documented product changes and those changes are re-measured.
+
+## Sprint 30 Public Beta gate
+
+Sprint 30 is IN PROGRESS. `ops/beta/gate.sh` executes the full Alpha technical gate and additionally requires passkey coverage for active owner/security accounts, zero open high/critical security alerts, zero critical moderation cases, an independent pentest report and legal/compliance sign-off evidence. `docs/PUBLIC_BETA_GATE.md` defines the external evidence contract. Sprint 30 cannot be DONE from repository code alone.
