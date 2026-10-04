@@ -16,13 +16,17 @@ type HTTPHandler struct {
 	yandex       *YandexOAuth
 	logger       *slog.Logger
 	secureCookie bool
+	clientIP     func(*http.Request) string
 }
 
 func NewHTTPHandler(service *Service, logger *slog.Logger, secureCookie bool) *HTTPHandler {
-	return &HTTPHandler{service: service, logger: logger, secureCookie: secureCookie}
+	return &HTTPHandler{service: service, logger: logger, secureCookie: secureCookie, clientIP: directClientIP}
 }
 
 func (h *HTTPHandler) SetYandexOAuth(yandex *YandexOAuth) { h.yandex = yandex }
+func (h *HTTPHandler) SetClientIPResolver(resolve func(*http.Request) string) {
+	if resolve != nil { h.clientIP = resolve }
+}
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/email/start", h.startEmail)
@@ -44,7 +48,7 @@ func (h *HTTPHandler) startEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.StartEmailLogin(r.Context(), body.Email, clientIP(r))
+	err := h.service.StartEmailLogin(r.Context(), body.Email, h.clientIP(r))
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusAccepted)
@@ -68,7 +72,7 @@ func (h *HTTPHandler) completeEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.service.CompleteEmailLogin(r.Context(), body.Token, r.UserAgent(), clientIP(r))
+	tokens, err := h.service.CompleteEmailLogin(r.Context(), body.Token, r.UserAgent(), h.clientIP(r))
 	if err != nil {
 		if errors.Is(err, ErrInvalidChallenge) {
 			writeAPIError(w, http.StatusUnauthorized, "invalid_login_link", "Login link is invalid or expired")
@@ -87,7 +91,7 @@ func (h *HTTPHandler) startYandex(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "yandex_not_configured", "Yandex ID is not configured")
 		return
 	}
-	authorizationURL, err := h.yandex.Start(r.Context(), clientIP(r))
+	authorizationURL, err := h.yandex.Start(r.Context(), h.clientIP(r))
 	if err != nil {
 		h.logger.Error("start yandex oauth failed", "error", err)
 		writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
@@ -106,7 +110,7 @@ func (h *HTTPHandler) completeYandex(w http.ResponseWriter, r *http.Request) {
 		h.redirectOAuthResult(w, r, base, "yandex_denied")
 		return
 	}
-	tokens, err := h.yandex.Complete(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("state"), r.UserAgent(), clientIP(r))
+	tokens, err := h.yandex.Complete(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("state"), r.UserAgent(), h.clientIP(r))
 	if err != nil {
 		if !errors.Is(err, ErrOAuthState) {
 			h.logger.Error("complete yandex oauth failed", "error", err)
@@ -144,7 +148,7 @@ func (h *HTTPHandler) refreshSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.clearRefreshCookie(w)
 		if errors.Is(err, ErrRefreshReuse) {
-			h.logger.Warn("refresh token reuse detected", "ip", clientIP(r))
+			h.logger.Warn("refresh token reuse detected", "ip", h.clientIP(r))
 			writeAPIError(w, http.StatusUnauthorized, "session_revoked", "Session revoked")
 			return
 		}
