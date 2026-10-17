@@ -262,9 +262,20 @@ func (s *Service) Open(ctx context.Context, viewerID, mediaID string) (*os.File,
 	// Metadata and the on-disk file can diverge after an incomplete volume
 	// restore. Never send a truncated image with the database Content-Length.
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() != object.ByteSize {
+	if err != nil || !info.Mode().IsRegular() || info.Size() != object.ByteSize || len(object.SHA256) != sha256.Size {
 		_ = file.Close()
 		return nil, StoredObject{}, ErrCorruptMedia
+	}
+	// Files may be corrupted without changing size. Verify against the durable
+	// database digest before sending bytes, then rewind for the HTTP writer.
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil || !bytes.Equal(hasher.Sum(nil), object.SHA256) {
+		_ = file.Close()
+		return nil, StoredObject{}, ErrCorruptMedia
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		_ = file.Close()
+		return nil, StoredObject{}, err
 	}
 	return file, object, nil
 }

@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"image"
 	"image/jpeg"
@@ -146,8 +147,9 @@ func TestOpenRejectsTruncatedMedia(t *testing.T) {
 	key := "ab/abcdef.jpg"
 	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o750); err != nil { t.Fatal(err) }
 	if err := os.WriteFile(filepath.Join(root, key), []byte("short"), 0o640); err != nil { t.Fatal(err) }
+	digest := sha256.Sum256([]byte("short"))
 	store := &resolvingStore{fakeStore: &fakeStore{}, allowed: true, object: StoredObject{
-		StorageKey: key, ByteSize: 500,
+		StorageKey: key, ByteSize: 500, SHA256: digest[:],
 	}}
 	service := NewService(store, &FileStorage{root: root})
 	file, _, err := service.Open(context.Background(), "viewer", "object-id")
@@ -157,4 +159,27 @@ func TestOpenRejectsTruncatedMedia(t *testing.T) {
 	file, _, err = service.Open(context.Background(), "viewer", "object-id")
 	if err != nil { t.Fatalf("intact image rejected: %v", err) }
 	_ = file.Close()
+}
+
+func TestOpenRejectsSameSizeContentCorruption(t *testing.T) {
+	root := t.TempDir()
+	key := "ab/abcdef.jpg"
+	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o750); err != nil { t.Fatal(err) }
+	original := []byte("original-data")
+	digest := sha256.Sum256(original)
+	if err := os.WriteFile(filepath.Join(root, key), []byte("altered!-data"), 0o640); err != nil { t.Fatal(err) }
+	store := &resolvingStore{fakeStore: &fakeStore{}, allowed: true, object: StoredObject{
+		StorageKey: key, ByteSize: int64(len(original)), SHA256: digest[:],
+	}}
+	service := NewService(store, &FileStorage{root: root})
+	file, _, err := service.Open(context.Background(), "viewer", "id")
+	if file != nil { _ = file.Close(); t.Fatal("corrupted bytes were served") }
+	if !errors.Is(err, ErrCorruptMedia) { t.Fatalf("same-size corruption not detected: %v", err) }
+	if err := os.WriteFile(filepath.Join(root, key), original, 0o640); err != nil { t.Fatal(err) }
+	file, _, err = service.Open(context.Background(), "viewer", "id")
+	if err != nil { t.Fatalf("valid digest rejected: %v", err) }
+	defer file.Close()
+	var contents bytes.Buffer
+	if _, err := contents.ReadFrom(file); err != nil { t.Fatal(err) }
+	if !bytes.Equal(contents.Bytes(), original) { t.Fatal("digest read did not rewind the file") }
 }
