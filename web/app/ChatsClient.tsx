@@ -82,6 +82,9 @@ export function ChatsClient() {
   const syncingChatsRef = useRef(new Set<string>());
 
   function chooseChat(chat: ChatSummary | null) {
+    // React effects run after render. Update the guard synchronously so
+    // responses from the previous conversation cannot mutate the new view.
+    selectedIdRef.current = chat?.chat_id ?? '';
     setSelected(chat);
     setReplyingTo(null);
     setEditing(null);
@@ -411,7 +414,11 @@ export function ChatsClient() {
     }
     setDraft('');
     setReplyingTo(null);
-    setMessages((current) => [...current, asLocalMessage(item, userId)]);
+    if (selectedIdRef.current === item.chat_id) {
+      setMessages((current) => [...current, asLocalMessage(item, userId)]);
+    }
+    // The item is durably queued under the original chat even if the user
+    // navigated away while IndexedDB was committing it.
     if (navigator.onLine) await deliver(item);
   }
 
