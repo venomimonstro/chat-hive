@@ -425,6 +425,22 @@ release blockers.
 **Remaining open sprints: 25, 26, 27, 28, 29, 30.**
 `main` changes alone do not establish release readiness.
 
+## October 17 — next hardening increments
+
+- **Sprint 26:** `52e7301` maps missing media to 404 and refuses truncated
+  files; `9087f97` additionally checks each served file's SHA-256 digest
+  against PostgreSQL, rewinds on success, and tests equal-size corruption.
+- **Sprint 27:** `4671ca3` rejects a media source accessed through symlinked
+  paths and disallows nested backup/media directories, preventing recursive
+  self-archiving and disk exhaustion. Offline smoke cases cover both.
+- **Sprint 25:** `3f21cf8` detects half-open WebSocket connections after
+  missed application-level pong events, reconnects, and includes browser
+  regression tests in the manual release gate.
+
+The above commits are source changes; the full Go race test, Next.js build,
+real-host load measurement, actual media+database restore and security
+assessment are **not yet verified**. Sprints 25–30 remain IN PROGRESS.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
