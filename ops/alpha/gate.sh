@@ -68,17 +68,17 @@ step "4/6 message write load"
   cd backend
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" CHAT_LOAD_CHAT_ID="$CHAT_ID" \
     go run ./cmd/loadtest -mode messages -base "$ALPHA_URL" \
-      -requests "$MESSAGE_REQUESTS" -concurrency "$MESSAGE_CONCURRENCY"
+      -requests "$MESSAGE_REQUESTS" -concurrency "$MESSAGE_CONCURRENCY" -message-rate 2
 )
 
 step "5/6 realtime connection and reconnect validation"
 (
   cd backend
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
-    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY"
+    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY" -ticket-rate 0.75 -ws-hold 170s -min-peak "$WS_CONCURRENCY"
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
     go run ./cmd/loadtest -mode reconnect -base "$ALPHA_URL" \
-      -concurrency "$RECONNECT_WORKERS" -reconnect-rounds "$RECONNECT_ROUNDS"
+      -concurrency "$RECONNECT_WORKERS" -reconnect-rounds "$RECONNECT_ROUNDS" -ticket-rate 0.75
 )
 
 step "6/6 isolated restore drill"

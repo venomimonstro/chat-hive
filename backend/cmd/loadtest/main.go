@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -33,9 +34,18 @@ func main() {
 	requests := flag.Int("requests", 200, "total HTTP requests")
 	concurrency := flag.Int("concurrency", 20, "concurrent workers/connections")
 	reconnectRounds := flag.Int("reconnect-rounds", 5, "reconnect cycles per worker")
+	messageRate := flag.Float64("message-rate", 0, "global messages per second, 0 for unpaced benchmarking")
+	ticketRate := flag.Float64("ticket-rate", 0, "global WebSocket tickets per second, 0 for unpaced benchmarking")
+	wsHold := flag.Duration("ws-hold", 10*time.Second, "hold and actively ping each websocket for this duration")
+	minPeak := flag.Int("min-peak", 0, "minimum concurrent active WebSocket connections required")
 	flag.Parse()
 	if *requests <= 0 || *concurrency <= 0 || *concurrency > 10000 || *reconnectRounds <= 0 {
 		fatal("requests, concurrency and reconnect-rounds must be positive; concurrency <= 10000")
+	}
+	if *messageRate < 0 || *messageRate > 1000 || (*messageRate > 0 && *messageRate < 0.01) ||
+		*ticketRate < 0 || *ticketRate > 1000 || (*ticketRate > 0 && *ticketRate < 0.01) ||
+		*wsHold <= 0 || *minPeak < 0 || *minPeak > *concurrency {
+		fatal("invalid pacing/hold/peak flags")
 	}
 	if _, err := url.ParseRequestURI(*base); err != nil {
 		fatal("invalid -base URL: " + err.Error())
@@ -49,13 +59,13 @@ func main() {
 		runHTTP(*base+"/health/live", http.MethodGet, "", "", *requests, *concurrency)
 	case "messages":
 		if access == "" || chatID == "" { fatal("CHAT_LOAD_ACCESS_TOKEN and CHAT_LOAD_CHAT_ID are required") }
-		runMessageBurst(*base, access, chatID, *requests, *concurrency)
+		runMessageBurst(*base, access, chatID, *requests, *concurrency, *messageRate)
 	case "websocket":
 		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
-		runWebSockets(*base, access, *concurrency)
+		runWebSockets(*base, access, *concurrency, *ticketRate, *wsHold, *minPeak)
 	case "reconnect":
 		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
-		runReconnectStorm(*base, access, *concurrency, *reconnectRounds)
+		runReconnectStorm(*base, access, *concurrency, *reconnectRounds, *ticketRate)
 	default:
 		fatal("unknown mode")
 	}
@@ -88,7 +98,7 @@ func runHTTP(target, method, token, body string, total, concurrency int) {
 	printResults(results,total,started)
 }
 
-func runMessageBurst(base, token, chatID string, total, concurrency int) {
+func runMessageBurst(base, token, chatID string, total, concurrency int, rate float64) {
 	jobs := make(chan int)
 	results := make(chan result,total)
 	client:=&http.Client{Timeout:10*time.Second}
@@ -110,58 +120,102 @@ func runMessageBurst(base, token, chatID string, total, concurrency int) {
 			}
 		}()
 	}
-	go func(){for i:=0;i<total;i++{jobs<-i};close(jobs);wg.Wait();close(results)}()
+	go func(){
+		wait,stop:=newPacer(rate)
+		for i:=0;i<total;i++{wait();jobs<-i}
+		stop()
+		close(jobs);wg.Wait();close(results)
+	}()
 	printResults(results,total,started)
 }
 
-func runWebSockets(base, token string, count int) {
-	type wsResult struct{ connect time.Duration; err error }
+// runWebSockets verifies ACTUAL simultaneous connections: tickets are paced
+// to avoid the auth limiter, and connections stay open long enough to overlap.
+// Heartbeat round-trips detect a server that disconnects idle sockets.
+func runWebSockets(base, token string, count int, rate float64, hold time.Duration, minPeak int) {
+	type wsResult struct { connect time.Duration; err error }
 	results:=make(chan wsResult,count)
 	started:=time.Now()
 	var wg sync.WaitGroup
+	var active,peak atomic.Int64
+	wait,stop:=newPacer(rate)
+	defer stop()
 	for i:=0;i<count;i++{
 		wg.Add(1)
 		go func(){
 			defer wg.Done()
+			wait()
 			begin:=time.Now()
 			ticket,err:=issueTicket(base,token)
-			if err!=nil{results<-wsResult{err:err};return}
+			if err!=nil {results<-wsResult{err:err};return}
 			wsURL,err:=toWS(base,ticket)
-			if err!=nil{results<-wsResult{err:err};return}
-			ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel()
+			if err!=nil {results<-wsResult{err:err};return}
+			ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second)
 			conn,_,err:=websocket.Dial(ctx,wsURL,&websocket.DialOptions{HTTPHeader:http.Header{"Origin":[]string{browserOrigin(base)}}})
-			if err!=nil{results<-wsResult{err:err};return}
+			if err!=nil {cancel();results<-wsResult{err:err};return}
 			defer conn.Close(websocket.StatusNormalClosure,"load test done")
 			var ready map[string]any
-			if err:=wsjson.Read(ctx,conn,&ready);err!=nil{results<-wsResult{err:err};return}
-			if ready["type"] != "ready" { results <- wsResult{err:fmt.Errorf("unexpected websocket readiness event: %v", ready["type"])}; return }
-			results<-wsResult{connect:time.Since(begin)}
-			<-ctx.Done()
+			err=wsjson.Read(ctx,conn,&ready)
+			cancel()
+			if err!=nil {results<-wsResult{err:err};return}
+			if ready["type"]!="ready" {results<-wsResult{err:fmt.Errorf("unexpected websocket readiness event: %v",ready["type"])};return}
+			connected:=time.Since(begin)
+			n:=active.Add(1)
+			for {old:=peak.Load();if n<=old || peak.CompareAndSwap(old,n){break}}
+			defer active.Add(-1)
+			timer:=time.NewTimer(hold)
+			defer timer.Stop()
+			ping:=time.NewTicker(20*time.Second)
+			defer ping.Stop()
+			for {
+				select {
+				case <-timer.C:
+					results<-wsResult{connect:connected}
+					return
+				case <-ping.C:
+					pingCtx,done:=context.WithTimeout(context.Background(),7*time.Second)
+					err=wsjson.Write(pingCtx,conn,map[string]string{"type":"ping"})
+					if err==nil {
+						var pong map[string]any
+						// Other chat events can arrive between ping and pong.
+						for j:=0;j<32;j++{
+							err=wsjson.Read(pingCtx,conn,&pong)
+							if err!=nil || pong["type"]=="pong"{break}
+						}
+						if err==nil && pong["type"]!="pong"{err=fmt.Errorf("websocket heartbeat missing pong")}
+					}
+					done()
+					if err!=nil{results<-wsResult{err:fmt.Errorf("websocket heartbeat: %w",err)};return}
+				}
+			}
 		}()
 	}
 	go func(){wg.Wait();close(results)}()
 	latencies:=make([]time.Duration,0,count);failures:=0
 	for item:=range results{if item.err!=nil{failures++;continue};latencies=append(latencies,item.connect)}
 	sort.Slice(latencies,func(i,j int)bool{return latencies[i]<latencies[j]})
-	fmt.Printf("websocket connections=%d successful=%d failed=%d wall=%s",count,len(latencies),failures,time.Since(started))
-	if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))}
+	fmt.Printf("websocket connections=%d successful=%d failed=%d peak=%d wall=%s",count,len(latencies),failures,peak.Load(),time.Since(started))
+	if len(latencies)>0 {fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))}
 	fmt.Println()
-	if failures > 0 { os.Exit(1) }
+	if failures>0 || len(latencies)!=count || int(peak.Load())<minPeak {fatal(fmt.Sprintf("websocket capacity gate failed: failures=%d peak=%d required=%d",failures,peak.Load(),minPeak))}
 }
 
-func runReconnectStorm(base, token string, workers, rounds int) {
+func runReconnectStorm(base, token string, workers, rounds int, rate float64) {
 	if workers <= 0 || rounds <= 0 { fatal("concurrency and reconnect-rounds must be positive") }
 	total := workers * rounds
 	type wsResult struct{ duration time.Duration; err error }
 	results := make(chan wsResult, total)
 	var wg sync.WaitGroup
 	started := time.Now()
+	wait,stop:=newPacer(rate)
+	defer stop()
 
 	for worker := 0; worker < workers; worker++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for round := 0; round < rounds; round++ {
+				wait()
 				begin := time.Now()
 				ticket, err := issueTicket(base, token)
 				if err != nil { results <- wsResult{err: err}; continue }
@@ -202,6 +256,16 @@ func runReconnectStorm(base, token string, workers, rounds int) {
 	}
 	fmt.Println()
 	if failures > 0 { os.Exit(1) }
+}
+
+// newPacer limits issuance without confusing intentional queue time with
+// measured service latency. A zero rate explicitly disables pacing.
+func newPacer(rate float64) (func(),func()) {
+	if rate==0 {return func(){},func(){}}
+	interval:=time.Duration(float64(time.Second)/rate)
+	if interval<time.Millisecond {interval=time.Millisecond}
+	ticker:=time.NewTicker(interval)
+	return func(){<-ticker.C},ticker.Stop
 }
 
 func issueTicket(base,token string)(string,error){
