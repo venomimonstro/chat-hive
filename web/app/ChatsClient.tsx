@@ -17,6 +17,7 @@ import {
 import type { RealtimeEvent } from '../lib/realtime';
 import { reconcileTimeline } from '../lib/messageTimeline';
 import { nextOutboxRetry, readyForOutboxRetry, RetryState } from '../lib/outboxRetry';
+import { useLanguage, type Language } from '../lib/language';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 type GroupRole = 'owner' | 'admin' | 'member' | null;
@@ -27,12 +28,12 @@ function chatName(chat: ChatSummary) {
   return chat.kind === 'direct' ? (chat.peer_display_name || chat.peer_username || 'Диалог') : (chat.title || 'Группа');
 }
 
-function formatTime(value?: string) {
+function formatTime(value?: string, language: Language = 'ru') {
   if (!value) return '';
   const date = new Date(value);
   const today = new Date();
-  if (date.toDateString() === today.toDateString()) return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  if (date.toDateString() === today.toDateString()) return date.toLocaleTimeString(language === 'en' ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString(language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
 function replaceChatQuery(chatID?: string) {
@@ -59,6 +60,7 @@ function asLocalMessage(item: OutboxItem, userId: string): LocalMessage {
 }
 
 export function ChatsClient() {
+  const { language, t } = useLanguage();
   const [userId, setUserId] = useState('');
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selected, setSelected] = useState<ChatSummary | null>(null);
@@ -134,7 +136,7 @@ export function ChatsClient() {
       if (selectedIdRef.current !== chatID) return;
       const ordered = [...items].reverse();
       setMessages((current) => reconcileTimeline(current, items, queued, userId, chatID, true));
-      void loadReactions(ordered, chatID);
+      // Reactions belong to a later release; no disabled API polling.
       const last = ordered.at(-1);
       if (last) await markChatRead(chatID, last.sequence).catch(() => undefined);
     } catch {
@@ -287,7 +289,7 @@ export function ChatsClient() {
         const ordered = [...items].reverse();
         setHasOlder(items.length === PAGE_SIZE);
         setMessages((current) => reconcileTimeline(current, items, queued, userId, selected.chat_id));
-        void loadReactions(ordered, selected.chat_id);
+        // Reactions belong to a later release.
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       })
@@ -326,8 +328,8 @@ export function ChatsClient() {
 
   const filteredChats = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return chats;
-    return chats.filter((chat) => `${chatName(chat)} ${chat.peer_username ?? ''}`.toLowerCase().includes(needle));
+    if (!needle) return chats.filter((chat) => chat.kind === 'direct');
+    return chats.filter((chat) => chat.kind === 'direct').filter((chat) => `${chatName(chat)} ${chat.peer_username ?? ''}`.toLowerCase().includes(needle));
   }, [chats, search]);
 
   const messageByID = useMemo(() => new Map(messages.filter((item) => !item.local_status).map((item) => [item.id, item])), [messages]);
@@ -345,7 +347,7 @@ export function ChatsClient() {
       // dedupe by stable client ID rather than blindly prepending it.
       setMessages((current) => reconcileTimeline(current, items, [], userId, selected.chat_id, true));
       setHasOlder(items.length === PAGE_SIZE);
-      void loadReactions(ordered, selected.chat_id);
+      // Reactions belong to a later release.
     } catch (err) {
       if (selectedIdRef.current !== selected.chat_id) return;
       setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
@@ -508,27 +510,27 @@ export function ChatsClient() {
       <div className={`messenger ${selected ? 'hasConversation' : ''}`}>
         <section className="conversationListPane">
           <header className="screenHeader">
-            <div><span className="eyebrow">CHAT</span><h1>Чаты</h1></div>
-            <IconButton type="button" aria-label="Новое сообщение" onClick={() => setShowNewChat((value) => !value)}>＋</IconButton>
+            <div><span className="eyebrow">CHAT</span><h1>{t.chats}</h1></div>
+            <IconButton type="button" aria-label={t.newChat} onClick={() => setShowNewChat((value) => !value)}>＋</IconButton>
           </header>
-          <div className="screenSearch"><SearchField value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Поиск чатов" placeholder="Поиск чатов" /></div>
+          <div className="screenSearch"><SearchField value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t.searchChats} placeholder={t.searchChats} /></div>
 
           {showNewChat ? (
             <form className="newChatForm" onSubmit={createChat}>
-              <input autoFocus value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="@username" aria-label="Username пользователя" />
-              <Button type="submit">Открыть</Button>
+              <input autoFocus value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="@username" aria-label={t.username} />
+              <Button type="submit">{t.open}</Button>
             </form>
           ) : null}
           {error ? <div className="messengerError" role="alert">{error}</div> : null}
 
-          <div className="chatList" aria-label="Список чатов">
-            {loading ? <div className="chatListState">Загружаем чаты…</div> : null}
-            {!loading && filteredChats.length === 0 ? <div className="chatListState">Диалогов пока нет. Нажмите ＋ и введите username.</div> : null}
+          <div className="chatList" aria-label={t.chats}>
+            {loading ? <div className="chatListState">{t.loadingChats}</div> : null}
+            {!loading && filteredChats.length === 0 ? <div className="chatListState">{t.emptyChats}</div> : null}
             {filteredChats.map((chat) => (
               <button className={`chatRow chatRowButton ${selected?.chat_id === chat.chat_id ? 'isSelected' : ''}`} key={chat.chat_id} onClick={() => chooseChat(chat)}>
                 <Avatar name={chatName(chat)} />
                 <div className="chatCopy">
-                  <div className="chatHeadline"><strong>{chatName(chat)}</strong><time>{formatTime(chat.last_message?.created_at ?? chat.updated_at)}</time></div>
+                  <div className="chatHeadline"><strong>{chatName(chat)}</strong><time>{formatTime(chat.last_message?.created_at ?? chat.updated_at, language)}</time></div>
                   <div className="chatPreview"><span>{chat.last_message?.body || (chat.kind === 'direct' ? `@${chat.peer_username}` : 'Новый чат')}</span>{chat.unread_count > 0 ? <Badge>{chat.unread_count}</Badge> : null}</div>
                 </div>
               </button>
@@ -538,18 +540,18 @@ export function ChatsClient() {
 
         <section className="conversationPane">
           {!selected ? (
-            <div className="conversationPlaceholder"><div>✦</div><strong>Выберите чат</strong><span>Или создайте новый диалог по username.</span></div>
+            <div className="conversationPlaceholder"><div aria-hidden="true">◇</div><strong>{t.chooseChat}</strong><span>{t.chooseChatHint}</span></div>
           ) : (
             <>
               <header className="conversationHeader">
-                <IconButton className="conversationBack" type="button" aria-label="Назад к чатам" onClick={() => chooseChat(null)}>‹</IconButton>
+                <IconButton className="conversationBack" type="button" aria-label={t.back} onClick={() => chooseChat(null)}>‹</IconButton>
                 <Avatar name={chatName(selected)} size="sm" />
                 <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : <span>{groupRole === 'owner' ? 'Группа · владелец' : groupRole === 'admin' ? 'Группа · администратор' : 'Группа'}</span>}</div>
                 {selected.kind === 'group' ? <a className="conversationSettings" href={`/groups/${selected.chat_id}`} aria-label="Настройки группы">•••</a> : null}
               </header>
               <div className="messageList" aria-live="polite">
-                {hasOlder ? <button className="loadOlderButton" type="button" onClick={loadOlder} disabled={olderLoading}>{olderLoading ? 'Загружаем…' : 'Показать предыдущие сообщения'}</button> : null}
-                {messageLoading ? <div className="chatListState">Загружаем историю…</div> : null}
+                {hasOlder ? <button className="loadOlderButton" type="button" onClick={loadOlder} disabled={olderLoading}>{olderLoading ? t.loading : t.older}</button> : null}
+                {messageLoading ? <div className="chatListState">{t.loadingHistory}</div> : null}
                 {messages.map((message) => {
                   const mine = message.sender_id === userId;
                   const replied = message.reply_to_id ? messageByID.get(message.reply_to_id) : undefined;
@@ -559,24 +561,24 @@ export function ChatsClient() {
                     <div className={`messageRow ${mine ? 'isMine' : ''}`} key={message.client_message_id}>
                       <div className={`messageBubble ${message.local_status === 'failed' ? 'isFailed' : ''}`}>
                         {replied ? <button className="messageReplyPreview" type="button" onClick={() => document.getElementById(`message-${replied.id}`)?.scrollIntoView({ block: 'center' })}>{replied.body || 'Сообщение удалено'}</button> : null}
-                        <p id={`message-${message.id}`}>{message.deleted_at ? 'Сообщение удалено' : message.body}</p>
-                        {messageReactions.length > 0 ? (
+                        <p id={`message-${message.id}`}>{message.deleted_at ? t.removed : message.body}</p>
+                        {false && messageReactions.length > 0 ? (
                           <div className="messageReactionSummary" aria-label="Реакции">
                             {messageReactions.map((item) => <button key={item.reaction} type="button" className={item.mine ? 'isMine' : ''} onClick={() => void toggleReaction(message, item.reaction)}>{item.reaction}<span>{item.count}</span></button>)}
                           </div>
                         ) : null}
                         <div className="messageMeta">
-                          <time>{formatTime(message.created_at)}</time>
-                          {message.edited_at ? <span>изменено</span> : null}
-                          {message.local_status === 'sending' ? <span>отправляем…</span> : null}
-                          {message.local_status === 'failed' ? <button type="button" onClick={() => void retry(message)}>повторить</button> : null}
+                          <time>{formatTime(message.created_at, language)}</time>
+                          {message.edited_at ? <span>{t.edited}</span> : null}
+                          {message.local_status === 'sending' ? <span>{t.sending}</span> : null}
+                          {message.local_status === 'failed' ? <button type="button" onClick={() => void retry(message)}>{t.retry}</button> : null}
                         </div>
                         {!message.local_status && !message.deleted_at ? (
                           <div className="messageActions">
-                            <button type="button" onClick={() => beginReply(message)}>Ответить</button>
-                            {QUICK_REACTIONS.map((reaction) => <button type="button" className="reactionQuickAction" key={reaction} aria-label={`Реакция ${reaction}`} onClick={() => void toggleReaction(message, reaction)}>{reaction}</button>)}
-                            {mine ? <button type="button" onClick={() => beginEdit(message)}>Изменить</button> : null}
-                            {mine ? <button type="button" className="danger" onClick={() => void removeMessage(message)}>Удалить</button> : null}
+                            <button type="button" onClick={() => beginReply(message)}>{t.reply}</button>
+                            {false ? QUICK_REACTIONS.map((reaction) => <button type="button" className="reactionQuickAction" key={reaction} aria-label={reaction} onClick={() => void toggleReaction(message, reaction)}>{reaction}</button>) : null}
+                            {mine ? <button type="button" onClick={() => beginEdit(message)}>{t.edit}</button> : null}
+                            {mine ? <button type="button" className="danger" onClick={() => void removeMessage(message)}>{t.delete}</button> : null}
                             {canModerate ? <button type="button" className="danger" onClick={() => void moderateRemoveMessage(message)}>Удалить как модератор</button> : null}
                           </div>
                         ) : null}
@@ -587,14 +589,14 @@ export function ChatsClient() {
               </div>
               {(replyingTo || editing) ? (
                 <div className="composerContext">
-                  <div><strong>{editing ? 'Редактирование' : 'Ответ'}</strong><span>{editing ? editing.body : replyingTo?.body}</span></div>
-                  <button type="button" onClick={cancelComposerContext} aria-label="Отменить">✕</button>
+                  <div><strong>{editing ? t.editing : t.answer}</strong><span>{editing ? editing.body : replyingTo?.body}</span></div>
+                  <button type="button" onClick={cancelComposerContext} aria-label={t.cancel}>✕</button>
                 </div>
               ) : null}
               <form className="messageComposer" onSubmit={send}>
-                <button type="button" aria-label="Добавить вложение" disabled>＋</button>
-                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={4096} placeholder={editing ? 'Изменить сообщение' : 'Сообщение'} aria-label="Сообщение" onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
-                <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label={editing ? 'Сохранить' : 'Отправить'}>{editing ? '✓' : '↑'}</button>
+                
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={4096} placeholder={editing ? t.edit : t.message} aria-label={t.message} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+                <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label={editing ? t.save : t.send}>{editing ? '✓' : '↑'}</button>
               </form>
             </>
           )}
