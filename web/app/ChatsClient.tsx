@@ -88,6 +88,7 @@ export function ChatsClient() {
     selectedIdRef.current = chat?.chat_id ?? '';
     setMessages([]);
     setHasOlder(false);
+    setOlderLoading(false);
     setMessageLoading(Boolean(chat));
     setSelected(chat);
     setReplyingTo(null);
@@ -98,11 +99,12 @@ export function ChatsClient() {
     replaceChatQuery(chat?.chat_id);
   }
 
-  async function loadReactions(items: LocalMessage[]) {
+  async function loadReactions(items: LocalMessage[], chatID: string) {
     const ids = items.filter((item) => !item.local_status && !item.deleted_at && !item.id.startsWith('local-')).map((item) => item.id).slice(0, 100);
     if (ids.length === 0) return;
     try {
       const batch = await listReactionBatch(ids);
+      if (selectedIdRef.current !== chatID) return;
       setReactions((current) => ({ ...current, ...batch }));
     } catch {
       // Reactions are non-critical metadata; message history must stay usable.
@@ -130,7 +132,7 @@ export function ChatsClient() {
       if (selectedIdRef.current !== chatID) return;
       const ordered = [...items].reverse();
       setMessages((current) => reconcileTimeline(current, items, queued, userId, chatID, true));
-      void loadReactions(ordered);
+      void loadReactions(ordered, chatID);
       const last = ordered.at(-1);
       if (last) await markChatRead(chatID, last.sequence).catch(() => undefined);
     } catch {
@@ -274,7 +276,7 @@ export function ChatsClient() {
         const ordered = [...items].reverse();
         setHasOlder(items.length === PAGE_SIZE);
         setMessages((current) => reconcileTimeline(current, items, queued, userId, selected.chat_id));
-        void loadReactions(ordered);
+        void loadReactions(ordered, selected.chat_id);
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       })
@@ -328,14 +330,16 @@ export function ChatsClient() {
       const items = await listMessages(selected.chat_id, first.sequence, PAGE_SIZE);
       if (selectedIdRef.current !== selected.chat_id) return;
       const ordered = [...items].reverse();
-      setMessages((current) => [...ordered, ...current]);
+      // The same page may already have arrived through realtime recovery:
+      // dedupe by stable client ID rather than blindly prepending it.
+      setMessages((current) => reconcileTimeline(current, items, [], userId, selected.chat_id, true));
       setHasOlder(items.length === PAGE_SIZE);
-      void loadReactions(ordered);
+      void loadReactions(ordered, selected.chat_id);
     } catch (err) {
       if (selectedIdRef.current !== selected.chat_id) return;
       setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
     } finally {
-      setOlderLoading(false);
+      if (selectedIdRef.current === selected.chat_id) setOlderLoading(false);
     }
   }
 
