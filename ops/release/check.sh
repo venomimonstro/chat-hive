@@ -71,6 +71,8 @@ if command -v npm >/dev/null 2>&1; then
   [[ -f web/package-lock.json ]] || fail "web/package-lock.json is required before production release"
   info "installing frontend dependencies from lockfile"
   (cd web && npm ci --ignore-scripts)
+  info "running rotating-session concurrency regressions"
+  (cd web && node --test tests/auth-refresh.test.cjs)
   info "running frontend typecheck"
   (cd web && npm run typecheck)
   info "running frontend production build"
