@@ -160,3 +160,43 @@ test('access tokens are memory-only and never persisted in browser storage', () 
   const fresh = createApp(async () => ({ status: 401, ok: false }));
   assert.equal(fresh.getAccessToken(), null);
 });
+
+test('same-page clients reuse short-lived session lookup instead of issuing redundant API calls', async () => {
+  let calls = 0;
+  const app = createApp(async () => {
+    calls++;
+    return { status: 200, ok: true, json: async () => ({ user_id: 'alice', session_id: 's' }) };
+  });
+  app.setAccessToken('token');
+  const [a, b, c] = await Promise.all([app.getCurrentSession(), app.getCurrentSession(), app.getCurrentSession()]);
+  assert.equal(calls, 1);
+  assert.equal(a.user_id, 'alice');
+  assert.equal(b.session_id, 's');
+  assert.equal(c.user_id, 'alice');
+});
+
+test('account switch invalidates session lookup before a new account is read', async () => {
+  let calls = 0;
+  const app = createApp(async () => {
+    calls++;
+    return { status: 200, ok: true, json: async () => ({ user_id: String(calls), session_id: String(calls) }) };
+  });
+  app.setAccessToken('alice');
+  assert.equal((await app.getCurrentSession()).user_id, '1');
+  app.setAccessToken('bob');
+  assert.equal((await app.getCurrentSession()).user_id, '2');
+  assert.equal(calls, 2);
+});
+
+test('failed session request is not cached and succeeds on a retry', async () => {
+  let calls = 0;
+  const app = createApp(async () => {
+    calls++;
+    if (calls === 1) return { status: 503, ok: false };
+    return { status: 200, ok: true, json: async () => ({ user_id: 'healthy' }) };
+  });
+  await assert.rejects(app.getCurrentSession(), /временно недоступен/);
+  // Catch handler clears a rejected cached Promise in a microtask.
+  await Promise.resolve();
+  assert.equal((await app.getCurrentSession()).user_id, 'healthy');
+});

@@ -15,6 +15,18 @@ function purgeLegacyToken() {
 // in-flight refresh cannot resurrect credentials after an account switch.
 let credentialGeneration = 0;
 
+// A typical route renders AppShell and page content separately. Share a short
+// session lookup across these consumers instead of sending 2–4 identical
+// authenticated GETs on every navigation. Explicit credential changes clear it.
+type CurrentSession = {
+  user_id: string; session_id: string;
+  auth_method: 'legacy' | 'email' | 'yandex' | 'passkey'; expires_at: string
+};
+let sessionLookup: Promise<CurrentSession | null> | null = null;
+let sessionUntil = 0;
+let sessionGeneration = -1;
+const SESSION_LOOKUP_TTL_MS = 8_000;
+
 type SessionPayload = {
   user_id: string;
   session_id: string;
@@ -108,10 +120,16 @@ export function getAccessToken() {
 }
 
 export function setAccessToken(token: string | null) {
+  const changed = memoryAccessToken !== token;
   credentialGeneration += 1;
   memoryAccessToken = token;
+  sessionLookup = null;
+  sessionUntil = 0;
+  sessionGeneration = -1;
   purgeLegacyToken();
-  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+  // Failed anonymous refresh must not endlessly restart language/session
+  // bootstrapping by dispatching null-to-null "auth changed" events.
+  if (changed && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new Event('chat:auth-changed'));
   }
 }
@@ -204,11 +222,27 @@ export function refreshSession(): Promise<SessionPayload | null> {
   return ongoing;
 }
 
-export async function getCurrentSession() {
-  const response = await request('/api/v1/auth/session');
-  if (response.status === 401 || response.status === 403) return null;
-  if (!response.ok) throw new Error('Не удалось проверить сессию: сервер временно недоступен');
-  return response.json() as Promise<{ user_id: string; session_id: string; auth_method: 'legacy' | 'email' | 'yandex' | 'passkey'; expires_at: string }>;
+export function getCurrentSession(): Promise<CurrentSession | null> {
+  const now = Date.now();
+  if (sessionLookup && sessionGeneration === credentialGeneration && now < sessionUntil) {
+    return sessionLookup;
+  }
+  const generation = credentialGeneration;
+  const lookup = (async (): Promise<CurrentSession | null> => {
+    const response = await request('/api/v1/auth/session');
+    if (response.status === 401 || response.status === 403) return null;
+    if (!response.ok) throw new Error('Не удалось проверить сессию: сервер временно недоступен');
+    return response.json() as Promise<CurrentSession>;
+  })();
+  sessionLookup = lookup;
+  sessionUntil = now + SESSION_LOOKUP_TTL_MS;
+  sessionGeneration = generation;
+  // Never cache transient outages. A cookie refresh may increment the token
+  // generation in flight; those old replies must never repopulate a new login.
+  void lookup.catch(() => {
+    if (sessionLookup === lookup) { sessionLookup = null; sessionUntil = 0; }
+  });
+  return lookup;
 }
 
 export async function listSessions(): Promise<{ items: DeviceSession[]; current_session_id: string }> {
