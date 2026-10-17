@@ -1,12 +1,13 @@
 function origins() {
-  const raw = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  if (!raw) return { api: "'self'", ws: "'self'" };
   try {
     const api = new URL(raw);
     const ws = new URL(raw);
     ws.protocol = api.protocol === 'https:' ? 'wss:' : 'ws:';
     return { api: api.origin, ws: ws.origin };
   } catch {
-    return { api: 'http://localhost:8080', ws: 'ws://localhost:8080' };
+    return { api: "'self'", ws: "'self'" };
   }
 }
 

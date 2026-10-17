@@ -55,6 +55,16 @@ func (h *HTTPHandler) issueTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) connect(w http.ResponseWriter, r *http.Request) {
+	// Reject foreign browser origins before consuming one-use tickets.
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" || parsed.Host != h.originPattern ||
+			(parsed.Scheme != "https" && parsed.Scheme != "http") {
+			writeError(w, http.StatusForbidden, "invalid_origin", "Origin is not allowed")
+			return
+		}
+	}
 	userID, ok := h.tickets.Consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Realtime ticket is invalid or expired")
