@@ -58,6 +58,10 @@ else
 fi
 
 if command -v npm >/dev/null 2>&1; then
+  info "checking PWA worker and Next.js configuration JavaScript syntax"
+  command -v node >/dev/null 2>&1 || fail "Node.js is required"
+  node --check web/public/sw.js
+  node --check web/next.config.mjs
   [[ -f web/package-lock.json ]] || fail "web/package-lock.json is required before production release"
   info "installing frontend dependencies from lockfile"
   (cd web && npm ci --ignore-scripts)
