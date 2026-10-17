@@ -17,8 +17,32 @@ func coreAPIAllowed(method, path string) bool {
     match := func(verbs ...string) bool { for _, verb := range verbs { if method == verb { return true } }; return false }
     switch fragments[0] {
     case "admin":
-        // Administrative endpoints remain behind privileged passkey auth.
-        return len(fragments)>=2
+        // Keep administrative routes explicitly enumerated. These handlers
+        // separately require privileged passkey sessions and role checks.
+        // Adding a new admin handler must not silently widen core access.
+        switch {
+        case len(fragments)==2 && fragments[1]=="me":
+            return match(http.MethodGet)
+        case len(fragments)==3 && fragments[1]=="moderation" && fragments[2]=="cases":
+            return match(http.MethodGet)
+        case len(fragments)==5 && fragments[1]=="moderation" && fragments[2]=="cases" && fragments[4]=="decision":
+            return match(http.MethodPost)
+        case len(fragments)==3 && fragments[1]=="security" &&
+            (fragments[2]=="events" || fragments[2]=="alerts" || fragments[2]=="summary"):
+            return match(http.MethodGet)
+        case len(fragments)==5 && fragments[1]=="security" && fragments[2]=="alerts" && fragments[4]=="ack":
+            return match(http.MethodPost)
+        case len(fragments)==3 && fragments[1]=="ops" &&
+            (fragments[2]=="flags" || fragments[2]=="runtime"):
+            return match(http.MethodGet)
+        case len(fragments)==4 && fragments[1]=="ops" && fragments[2]=="flags":
+            return match(http.MethodPut)
+        case len(fragments)==3 && fragments[1]=="product" && fragments[2]=="metrics":
+            return match(http.MethodGet)
+        case len(fragments)==3 && fragments[1]=="beta" && fragments[2]=="readiness":
+            return match(http.MethodGet)
+        }
+        return false
     case "growth":
         return len(fragments)==2 && fragments[1]=="events" && match(http.MethodPost)
     case "auth":

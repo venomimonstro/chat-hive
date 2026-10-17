@@ -10,7 +10,12 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
     allow := []struct{ method,path string }{
         {"GET","/health/ready"},{"GET","/api/v1/auth/session"},
         {"POST","/api/v1/auth/email/start"},{"POST","/api/v1/auth/refresh"},
-        {"GET","/api/v1/admin/me"},{"POST","/api/v1/growth/events"},
+        {"GET","/api/v1/admin/me"},
+        {"GET","/api/v1/admin/security/alerts"},
+        {"POST","/api/v1/admin/security/alerts/17/ack"},
+        {"GET","/api/v1/admin/product/metrics"},
+        {"GET","/api/v1/admin/beta/readiness"},
+        {"POST","/api/v1/growth/events"},
         {"POST","/api/v1/auth/passkeys/login/begin"},
         {"POST","/api/v1/auth/passkeys/register/finish/c"},
         {"GET","/api/v1/auth/yandex/callback"},
@@ -27,6 +32,9 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
     for _,tc:=range allow {if !coreAPIAllowed(tc.method,tc.path){t.Errorf("blocked core route %s %s",tc.method,tc.path)}}
     blocked:=[]struct{method,path string}{
         {"GET","/api/v1/feed"},{"GET","/api/v1/channels"},
+        {"DELETE","/api/v1/admin/me"},{"GET","/api/v1/admin/forgotten"},
+        {"POST","/api/v1/admin/security/alerts/17/approve"},
+        {"GET","/api/v1/admin/moderation/hidden-data"},
         {"POST","/api/v1/auth/unexpected/future"},
         {"GET","/api/v1/auth/refresh"},
         {"POST","/api/v1/auth/email/start/extra"},
