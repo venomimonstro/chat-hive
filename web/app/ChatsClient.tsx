@@ -175,12 +175,13 @@ export function ChatsClient() {
   }
 
   useEffect(() => {
-    void Promise.all([getCurrentSession(), listChats()])
-        .then(([session, items]) => {
+    void getCurrentSession()
+        .then(async (session) => {
           if (!session) {
             window.location.replace('/login');
             return;
           }
+          const items = await listChats();
           accountRef.current = session.user_id;
           setUserId(session.user_id);
           setChats(items);

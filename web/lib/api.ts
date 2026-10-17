@@ -162,10 +162,13 @@ export function refreshSession(): Promise<SessionPayload | null> {
     const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: 'POST', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store'
     });
-    if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
       setAccessToken(null);
       return null;
     }
+    // A temporary 5xx/outage is not a logout. Preserve the access token so
+    // the app can recover without discarding a legitimate user's session.
+    if (!response.ok) throw new Error('Сервис авторизации временно недоступен');
     const payload = await response.json() as SessionPayload;
     setAccessToken(payload.access_token);
     return payload;
@@ -177,7 +180,8 @@ export function refreshSession(): Promise<SessionPayload | null> {
 
 export async function getCurrentSession() {
   const response = await request('/api/v1/auth/session');
-  if (!response.ok) return null;
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) throw new Error('Не удалось проверить сессию: сервер временно недоступен');
   return response.json() as Promise<{ user_id: string; session_id: string; auth_method: 'legacy' | 'email' | 'yandex' | 'passkey'; expires_at: string }>;
 }
 
