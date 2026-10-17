@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -32,6 +33,15 @@ positive_integer CHAT_ALPHA_RECONNECT_WORKERS "$RECONNECT_WORKERS"
 positive_integer CHAT_ALPHA_RECONNECT_ROUNDS "$RECONNECT_ROUNDS"
 positive_integer CHAT_ALPHA_MESSAGE_REQUESTS "$MESSAGE_REQUESTS"
 positive_integer CHAT_ALPHA_MESSAGE_CONCURRENCY "$MESSAGE_CONCURRENCY"
+[[ "$WS_CONCURRENCY" -le 10000 ]] || fail "WebSocket concurrency exceeds supported load harness capacity"
+[[ "$RECONNECT_WORKERS" -le 10000 ]] || fail "Reconnect workers exceed supported load harness capacity"
+[[ "$MESSAGE_CONCURRENCY" -le 10000 ]] || fail "Message workers exceed supported load harness capacity"
+# WebSocket handshakes are intentionally paced at 0.75 tickets/second.
+# Keep the earliest connection alive until the last handshake completes.
+MIN_WS_HOLD=$(((WS_CONCURRENCY * 4 + 2) / 3 + 30))
+WS_HOLD_SECONDS="${CHAT_ALPHA_WS_HOLD_SECONDS:-$MIN_WS_HOLD}"
+positive_integer CHAT_ALPHA_WS_HOLD_SECONDS "$WS_HOLD_SECONDS"
+[[ "$WS_HOLD_SECONDS" -ge "$MIN_WS_HOLD" ]] || fail "CHAT_ALPHA_WS_HOLD_SECONDS must be at least $MIN_WS_HOLD for $WS_CONCURRENCY connections"
 
 [[ -n "$ACCESS_TOKEN" ]] || fail "CHAT_ALPHA_ACCESS_TOKEN is required for the full Alpha gate"
 [[ -n "$CHAT_ID" ]] || fail "CHAT_ALPHA_CHAT_ID is required for message load validation"
@@ -50,6 +60,18 @@ exec > >(tee -a "$RECORD") 2>&1
 
 printf 'CHAT CLOSED ALPHA GATE\n'
 printf 'timestamp_utc=%s\ncommit=%s\nurl=%s\n' "$STAMP" "$COMMIT" "$ALPHA_URL"
+printf 'ws_requested=%s ws_hold_seconds=%s ws_ticket_rate=0.75 message_rate=2\n' "$WS_CONCURRENCY" "$WS_HOLD_SECONDS"
+
+resource_snapshot() {
+  printf 'host_os=%s cpus=%s\n' "$(uname -srm)" "$(nproc 2>/dev/null || printf unknown)"
+  if command -v free >/dev/null 2>&1; then free -m || true; fi
+  if command -v df >/dev/null 2>&1; then df -Pk "$ROOT" || true; fi
+  if command -v docker >/dev/null 2>&1; then
+    docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' || true
+  fi
+}
+step "0/6 baseline host resources"
+resource_snapshot
 
 step "1/6 repository release gate"
 bash ops/release/check.sh
@@ -75,7 +97,7 @@ step "5/6 realtime connection and reconnect validation"
 (
   cd backend
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
-    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY" -ticket-rate 0.75 -ws-hold 170s -min-peak "$WS_CONCURRENCY"
+    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY" -ticket-rate 0.75 -ws-hold "${WS_HOLD_SECONDS}s" -min-peak "$WS_CONCURRENCY"
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
     go run ./cmd/loadtest -mode reconnect -base "$ALPHA_URL" \
       -concurrency "$RECONNECT_WORKERS" -reconnect-rounds "$RECONNECT_ROUNDS" -ticket-rate 0.75
@@ -83,6 +105,9 @@ step "5/6 realtime connection and reconnect validation"
 
 step "6/6 isolated restore drill"
 sh ops/backup/drill.sh "$BACKUP_DIR"
+
+step "post-run host resources"
+resource_snapshot
 
 printf '\nALPHA TECHNICAL GATE PASS\nrecord=%s\n' "$RECORD"
 printf 'NOTE: manual product scenarios, real-device passkey smoke and independent pentest remain mandatory before Public Beta.\n'
