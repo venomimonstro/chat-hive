@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { refreshSession } from '../../../lib/api';
+import { useLanguage } from '../../../lib/language';
 
 export function YandexComplete() {
+  const { language } = useLanguage();
+  const en = language === 'en';
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState('');
@@ -32,9 +35,9 @@ export function YandexComplete() {
     return (
       <div className="authCallbackState">
         <div className="authMark authMark--error">!</div>
-        <h1>Вход не завершён</h1>
+        <h1>{en ? 'Sign-in incomplete' : 'Вход не завершён'}</h1>
         <p>{error}</p>
-        <a className="uiButton uiButton--primary" href="/login">Вернуться ко входу</a>
+        <a className="uiButton uiButton--primary" href="/login">{en ? 'Back to sign in' : 'Вернуться ко входу'}</a>
       </div>
     );
   }
@@ -42,8 +45,8 @@ export function YandexComplete() {
   return (
     <div className="authCallbackState" role="status" aria-live="polite">
       <div className="authSpinner" aria-hidden="true" />
-      <h1>Подключаем Яндекс ID…</h1>
-      <p>Создаём защищённую сессию CHAT.</p>
+      <h1>{en ? 'Connecting Yandex ID…' : 'Подключаем Яндекс ID…'}</h1>
+      <p>{en ? 'Creating a secure CHAT session.' : 'Создаём защищённую сессию CHAT.'}</p>
     </div>
   );
 }

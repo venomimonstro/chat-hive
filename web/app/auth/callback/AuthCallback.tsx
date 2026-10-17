@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { completeEmailLogin } from '../../../lib/api';
+import { useLanguage } from '../../../lib/language';
 
 export function AuthCallback() {
+  const { language } = useLanguage();
+  const en = language === 'en';
   const params = useSearchParams();
   const router = useRouter();
   const [error, setError] = useState('');
@@ -32,9 +35,9 @@ export function AuthCallback() {
     return (
       <div className="authCallbackState">
         <div className="authMark authMark--error">!</div>
-        <h1>Не удалось войти</h1>
+        <h1>{en ? 'Sign-in failed' : 'Не удалось войти'}</h1>
         <p>{error}</p>
-        <a className="uiButton uiButton--primary" href="/login">Получить новую ссылку</a>
+        <a className="uiButton uiButton--primary" href="/login">{en ? 'Get a new link' : 'Получить новую ссылку'}</a>
       </div>
     );
   }
@@ -42,8 +45,8 @@ export function AuthCallback() {
   return (
     <div className="authCallbackState" role="status" aria-live="polite">
       <div className="authSpinner" aria-hidden="true" />
-      <h1>Входим в CHAT…</h1>
-      <p>Проверяем одноразовую ссылку и создаём защищённую сессию.</p>
+      <h1>{en ? 'Signing in…' : 'Входим в CHAT…'}</h1>
+      <p>{en ? 'Verifying your one-time link and creating a secure session.' : 'Проверяем одноразовую ссылку и создаём защищённую сессию.'}</p>
     </div>
   );
 }
