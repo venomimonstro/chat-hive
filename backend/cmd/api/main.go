@@ -28,6 +28,7 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/notifications"
 	"github.com/venomimonstro/chat-hive/backend/internal/onboarding"
 	"github.com/venomimonstro/chat-hive/backend/internal/posts"
+    "github.com/venomimonstro/chat-hive/backend/internal/preferences"
 	"github.com/venomimonstro/chat-hive/backend/internal/realtime"
 	"github.com/venomimonstro/chat-hive/backend/internal/requests"
 	"github.com/venomimonstro/chat-hive/backend/internal/requestmeta"
@@ -83,6 +84,7 @@ func main() {
 	notificationService := notifications.NewService(notifications.NewPostgresStore(pool))
 	notificationHTTP := notifications.NewHTTPHandler(notificationService, identityService, logger)
 	accountDataHTTP := accountdata.NewHTTPHandler(accountdata.NewStore(pool), identityService, logger)
+    preferencesHTTP := preferences.NewHandler(pool, identityService, logger)
 
 	onboardingHTTP := onboarding.NewHTTPHandler(onboarding.NewService(onboarding.NewPostgresStore(pool)), identityService, logger)
 	socialHTTP := social.NewHTTPHandler(social.NewService(social.NewPostgresStore(pool)), identityService, logger)
@@ -125,7 +127,9 @@ func main() {
 	})
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
-	go realtime.NewListener(pool, realtimeHub, logger).Run(runtimeCtx)
+	realtimeListener := realtime.NewListener(pool, realtimeHub, logger)
+    realtimeListener.SetCoreOnly(coreLaunch)
+    go realtimeListener.Run(runtimeCtx)
 
 	mediaFiles, err := media.NewFileStorageFromEnv()
 	if err != nil { logger.Error("media storage configuration failed", "error", err); os.Exit(1) }
@@ -135,6 +139,7 @@ func main() {
     app.SetCoreLaunch(coreLaunch)
 	app.Register(identityHTTP.Register)
 	app.Register(accountDataHTTP.Register)
+    app.Register(preferencesHTTP.Register)
 	app.Register(onboardingHTTP.Register)
 	app.Register(socialHTTP.Register)
 	app.Register(growthHTTP.Register)

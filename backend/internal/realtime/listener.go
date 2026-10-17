@@ -13,11 +13,13 @@ type Listener struct {
 	pool   *pgxpool.Pool
 	hub    *Hub
 	logger *slog.Logger
+    coreOnly bool
 }
 
 func NewListener(pool *pgxpool.Pool, hub *Hub, logger *slog.Logger) *Listener {
-	return &Listener{pool: pool, hub: hub, logger: logger}
+    return &Listener{pool:pool,hub:hub,logger:logger}
 }
+func (l *Listener) SetCoreOnly(core bool){l.coreOnly=core}
 
 func (l *Listener) Run(ctx context.Context) {
 	backoff := time.Second
@@ -62,7 +64,9 @@ func (l *Listener) listenOnce(ctx context.Context) error {
 }
 
 func (l *Listener) chatRecipients(ctx context.Context, chatID string) ([]string,error) {
-	rows, err := l.pool.Query(ctx, `SELECT user_id::text FROM chat_members WHERE chat_id=$1::uuid AND left_at IS NULL`, chatID)
+	rows, err := l.pool.Query(ctx, `SELECT cm.user_id::text FROM chat_members cm
+    JOIN chats c ON c.id=cm.chat_id
+    WHERE cm.chat_id=$1::uuid AND cm.left_at IS NULL AND (NOT $2::boolean OR c.kind='direct')`, chatID,l.coreOnly)
 	if err != nil { return nil,err }
 	defer rows.Close()
 	items := make([]string,0,8)
