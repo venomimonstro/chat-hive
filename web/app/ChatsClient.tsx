@@ -249,15 +249,15 @@ export function ChatsClient() {
       return;
     }
 
+    let active = true;
+    // Never display privileged controls from the previously selected group
+    // while the new group's role is being fetched.
+    setGroupRole(null);
     if (selected.kind === 'group') {
       void getGroupDetails(selected.chat_id)
-        .then((group) => setGroupRole(group.role))
-        .catch(() => setGroupRole(null));
-    } else {
-      setGroupRole(null);
+        .then((group) => { if (active) setGroupRole(group.role); })
+        .catch(() => { if (active) setGroupRole(null); });
     }
-
-    let active = true;
     setMessageLoading(true);
     Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(accountRef.current, selected.chat_id)])
       .then(async ([items, queued]) => {
