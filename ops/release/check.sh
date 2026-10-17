@@ -71,9 +71,27 @@ if command -v npm >/dev/null 2>&1; then
   node --check web/next.config.mjs
   info "running dependency-free PWA security regression tests"
   (cd web && node --test tests/sw.test.cjs)
+  info "enforcing patched Next.js versions"
+  (cd web && node <<'NODE'
+const version = require('./package.json').dependencies.next;
+const parts = version.split('.');
+if (parts.length !== 3 || parts.some((part) => !Number.isSafeInteger(Number(part)) || Number(part) < 0 || String(Number(part)) !== part)) {
+  throw new Error('Next.js must be pinned to an explicit stable version');
+}
+const [major, minor, patch] = parts.map(Number);
+const patched15 = major === 15 && (minor > 5 || (minor === 5 && patch >= 28));
+const patched16 = major === 16 && (minor > 4 || (minor === 4 && patch >= 1));
+if (!(patched15 || patched16 || major > 16)) {
+  throw new Error('Next.js ' + version + ' predates the October 2026 security fixes. Upgrade before release.');
+}
+console.log('Next.js security version gate passed:', version);
+NODE
+  )
   [[ -f web/package-lock.json ]] || fail "web/package-lock.json is required before production release"
   info "installing frontend dependencies from lockfile"
   (cd web && npm ci --ignore-scripts)
+  info "auditing production dependency vulnerabilities"
+  (cd web && npm audit --omit=dev --audit-level=high)
   info "running rotating-session concurrency regressions"
   (cd web && node --test tests/auth-refresh.test.cjs)
   info "running frontend typecheck"

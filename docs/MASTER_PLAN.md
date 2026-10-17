@@ -305,6 +305,18 @@ bash ops/beta/gate.sh
 
 The Alpha/Beta gates require their documented environment values, live target hosts and external evidence. They must not be marked PASS from source inspection alone. Do not fabricate the npm lockfile or replace deterministic `npm ci` with an uncontrolled install in production.
 
+## Security dependency update — October 17, 2026
+
+The original pinned Next.js `15.2.4` is older than the security releases
+fixing React Server Components vulnerabilities (2025) and the October 2026
+advisories. The frontend dependency has been pinned to `15.5.28`, the
+official October 14, 2026 Next.js 15 maintenance security release.
+Source: https://nextjs.org/blog/nextjs-security-update-october-14-2026
+
+The manual release gate rejects older Next.js branches and runs a production
+dependency audit. **A genuine lockfile and a passing frontend build on a
+network-enabled machine are still required before deployment.**
+
 ## October 17 implementation continuation
 
 - Sprint 25: corrected the Go load harness to measure elapsed wall time only
