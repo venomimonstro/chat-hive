@@ -24,6 +24,7 @@ type Server struct {
 	securitySink    SecurityEventSink
 	operationalGate OperationalGate
 	degradedCheck   func() bool
+    coreLaunch      bool
 	clientIPResolver func(*http.Request) string
 }
 
@@ -40,6 +41,7 @@ func New(logger *slog.Logger) *Server {
 
 func (s *Server) Register(register func(*http.ServeMux)) { register(s.mux) }
 func (s *Server) SetReadiness(check func(context.Context) error) { s.readiness = check }
+func (s *Server) SetCoreLaunch(enabled bool) { s.coreLaunch = enabled }
 func (s *Server) SetAllowedOrigin(origin string) { s.allowedOrigin = strings.TrimRight(strings.TrimSpace(origin), "/") }
 func (s *Server) SetSecurityEventSink(sink SecurityEventSink) { s.securitySink = sink }
 func (s *Server) SetOperationalGate(gate OperationalGate) { s.operationalGate = gate }
@@ -48,7 +50,8 @@ func (s *Server) SetClientIPResolver(resolve func(*http.Request) string) { s.cli
 
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
-	handler = bodyLimitMiddleware(handler)
+	handler = coreLaunchMiddleware(s.coreLaunch, handler)
+    handler = bodyLimitMiddleware(handler)
 	handler = loadSheddingMiddleware(s.degradedCheck, handler)
 	handler = operationalGateMiddleware(s.operationalGate, s.logger, handler)
 	handler = rateLimitMiddleware(s.limiter, s.securitySink, s.clientIPResolver, handler)

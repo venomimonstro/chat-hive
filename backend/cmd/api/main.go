@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+    "strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,17 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg, err := config.Load()
+    launchMode := strings.TrimSpace(os.Getenv("CHAT_LAUNCH_MODE"))
+    if launchMode == "" { launchMode = "core" }
+    if launchMode != "core" && launchMode != "full" {
+        logger.Error("invalid CHAT_LAUNCH_MODE (must be core or full)")
+        os.Exit(1)
+    }
+    if cfg.Environment == "production" && launchMode == "full" && os.Getenv("CHAT_ENABLE_FUTURE_FEATURES") != "I_ACCEPT_FULL_RELEASE_RISK" {
+        logger.Error("full release blocked in production without explicit acknowledgement")
+        os.Exit(1)
+    }
+    coreLaunch := launchMode == "core"
 	if err != nil { logger.Error("configuration error", "error", err); os.Exit(1) }
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelStartup()
@@ -75,6 +87,7 @@ func main() {
 	onboardingHTTP := onboarding.NewHTTPHandler(onboarding.NewService(onboarding.NewPostgresStore(pool)), identityService, logger)
 	socialHTTP := social.NewHTTPHandler(social.NewService(social.NewPostgresStore(pool)), identityService, logger)
 	messagingStore := messaging.NewPostgresStore(pool)
+    messagingStore.SetCoreOnly(coreLaunch)
 	messagingService := messaging.NewService(messagingStore)
 	messagingHTTP := messaging.NewHTTPHandler(messagingService, identityService, logger)
 	reactionBatchHTTP := messaging.NewReactionBatchHTTPHandler(messaging.NewReactionBatchService(messagingStore), identityService, logger)
@@ -119,6 +132,7 @@ func main() {
 	mediaHTTP := media.NewHTTPHandler(media.NewService(media.NewPostgresStore(pool), mediaFiles), identityService, logger)
 
 	app := httpserver.New(logger)
+    app.SetCoreLaunch(coreLaunch)
 	app.Register(identityHTTP.Register)
 	app.Register(accountDataHTTP.Register)
 	app.Register(onboardingHTTP.Register)

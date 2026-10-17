@@ -10,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type PostgresStore struct{ pool *pgxpool.Pool }
+type PostgresStore struct{ pool *pgxpool.Pool; coreOnly bool }
+func (s *PostgresStore) SetCoreOnly(enabled bool) { s.coreOnly = enabled }
 
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore { return &PostgresStore{pool: pool} }
 
@@ -126,11 +127,12 @@ func (s *PostgresStore) ListChats(ctx context.Context, userID string, limit int,
 		LEFT JOIN profiles peer ON peer.user_id = CASE WHEN d.user_low=$1::uuid THEN d.user_high ELSE d.user_low END
 		LEFT JOIN LATERAL (SELECT m.* FROM messages m WHERE m.chat_id=c.id ORDER BY m.sequence DESC LIMIT 1) lm ON TRUE
 		WHERE cm.user_id=$1::uuid AND cm.left_at IS NULL
+          AND (NOT $4::boolean OR c.kind='direct')
 		  AND (c.kind<>'direct' OR d.request_state='accepted' OR d.requested_by=$1::uuid)
 		  AND (NULLIF($2,'') IS NULL OR c.updated_at < NULLIF($2,'')::timestamptz)
 		ORDER BY c.updated_at DESC, c.id DESC
 		LIMIT $3`
-	rows, err := s.pool.Query(ctx, query, userID, beforeUpdatedAt, limit)
+	rows, err := s.pool.Query(ctx, query, userID, beforeUpdatedAt, limit, s.coreOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +193,12 @@ func (s *PostgresStore) SendText(ctx context.Context, input SendInput) (Message,
 		return Message{}, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if existing, found, err := findMessageByClientID(ctx, tx, input.UserID, input.ClientMessageID); err != nil {
+	if s.coreOnly {
+        var direct bool
+        if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chats WHERE id=$1::uuid AND kind='direct')`, input.ChatID).Scan(&direct); err != nil { return Message{},false,err }
+        if !direct { return Message{},false,ErrChatNotFound }
+    }
+    if existing, found, err := findMessageByClientID(ctx, tx, input.UserID, input.ClientMessageID); err != nil {
 		return Message{}, false, err
 	} else if found {
 		if existing.ChatID != input.ChatID {
@@ -351,7 +358,10 @@ func (s *PostgresStore) MarkRead(ctx context.Context, userID, chatID string, seq
 
 func (s *PostgresStore) isActiveMember(ctx context.Context, userID, chatID string) (bool, error) {
 	var member bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chat_members WHERE chat_id=$1::uuid AND user_id=$2::uuid AND left_at IS NULL)`, chatID, userID).Scan(&member); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chat_members cm
+        JOIN chats c ON c.id=cm.chat_id
+        WHERE cm.chat_id=$1::uuid AND cm.user_id=$2::uuid AND cm.left_at IS NULL
+          AND (NOT $3::boolean OR c.kind='direct'))`, chatID, userID, s.coreOnly).Scan(&member); err != nil {
 		return false, err
 	}
 	return member, nil
