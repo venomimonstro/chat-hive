@@ -362,6 +362,30 @@ the live Alpha host, isolated restore using a real backup, independent pentest,
 real-device Passkeys, measured Alpha cohort and legal/operational sign-off.
 No Sprint 25–30 has been reclassified DONE by source-only changes.
 
+## Sprint 25–28 continuation: current source changes
+
+The following corrections are committed directly to `main`:
+
+- **Sprint 26 — media privacy:** `d84d4ef` disables browser caching for media
+  responses until the server can unambiguously classify media as public.
+  Prevents private group/message images surviving an account change in a
+  shared browser cache.
+- **Sprint 28 — offline messaging:** `a8a5a0e` updates the current-chat guard
+  synchronously and prevents a delayed IndexedDB enqueue from displaying its
+  message in a different conversation after navigation.
+- **Sprint 26 — request tracing:** `4e358c5` accepts only bounded, safe
+  client request IDs and generates random server-side IDs otherwise.
+- **Sprint 25 — load evidence:** `74161d2` captures host CPU/memory/disk
+  snapshots before/after the technical Alpha gate, enforces private report
+  permissions, and derives the WebSocket hold duration from the connection
+  count and issue rate rather than hardcoding a fragile limit.
+
+No real production host, full dependency build or live disaster-recovery
+scenario was tested by these commits. Sprints 25–30 remain **IN PROGRESS**.
+The release remains blocked until a genuine npm lockfile is committed, the
+Go/Next.js checks and clean migrations pass, real WebSocket capacity and DR
+evidence is collected, and the remaining external gates are signed off.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
