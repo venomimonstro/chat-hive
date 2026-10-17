@@ -22,9 +22,32 @@ func coreAPIAllowed(method, path string) bool {
     case "growth":
         return len(fragments)==2 && fragments[1]=="events" && match(http.MethodPost)
     case "auth":
-        // Session security, logout, magic links, passkeys and optional Yandex.
-        return len(fragments) >= 2 && len(fragments) <= 5 &&
-            match(http.MethodGet, http.MethodPost, http.MethodDelete)
+        // Explicit endpoints only; newly added authentication methods must
+        // not become available in the limited launch accidentally.
+        switch {
+        case len(fragments)==3 && fragments[1]=="email" &&
+            (fragments[2]=="start" || fragments[2]=="complete"):
+            return match(http.MethodPost)
+        case len(fragments)==3 && fragments[1]=="yandex" &&
+            (fragments[2]=="start" || fragments[2]=="callback"):
+            return match(http.MethodGet)
+        case len(fragments)==2 && fragments[1]=="passkeys":
+            return match(http.MethodGet)
+        case len(fragments)==3 && fragments[1]=="passkeys":
+            return match(http.MethodDelete)
+        case len(fragments)==4 && fragments[1]=="passkeys" &&
+            (fragments[2]=="register" || fragments[2]=="login") && fragments[3]=="begin":
+            return match(http.MethodPost)
+        case len(fragments)==5 && fragments[1]=="passkeys" &&
+            (fragments[2]=="register" || fragments[2]=="login") && fragments[3]=="finish":
+            return match(http.MethodPost)
+        case len(fragments)==2 && (fragments[1]=="refresh" || fragments[1]=="session" || fragments[1]=="sessions"):
+            if fragments[1]=="refresh" { return match(http.MethodPost) }
+            return match(http.MethodGet)
+        case len(fragments)==3 && fragments[1]=="sessions":
+            return match(http.MethodDelete)
+        }
+        return false
     case "onboarding":
         return len(fragments)==2 && fragments[1]=="interests" && match(http.MethodGet)
     case "me":
