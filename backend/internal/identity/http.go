@@ -2,6 +2,7 @@ package identity
 
 import (
 	"encoding/json"
+	"io"
 	"errors"
 	"log/slog"
 	"net"
@@ -440,7 +441,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(destination)
+    if err := decoder.Decode(destination); err != nil { return err }
+    var trailing any
+    if err := decoder.Decode(&trailing); err != io.EOF {
+        return errors.New("request must contain exactly one JSON value")
+    }
+    return nil
 }
 
 func writeAPIError(w http.ResponseWriter, status int, code, message string) {
