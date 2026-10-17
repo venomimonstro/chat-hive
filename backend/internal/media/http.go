@@ -79,11 +79,19 @@ func (h *HTTPHandler) content(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	setMediaResponseHeaders(w, object)
+	_, _ = io.Copy(w, file)
+}
+
+// Media can be private to a user or chat membership. In the single-node
+// MVP there is no separate public-media proof at the HTTP boundary, so do not
+// persist any media responses in a shared-device browser cache.
+func setMediaResponseHeaders(w http.ResponseWriter, object StoredObject) {
 	w.Header().Set("Content-Type", object.MimeType)
 	w.Header().Set("Content-Length", int64String(object.ByteSize))
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = io.Copy(w, file)
 }
 
 func int64String(value int64) string {
