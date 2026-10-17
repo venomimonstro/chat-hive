@@ -42,17 +42,21 @@ function websocketURL(ticket: string) {
 export class RealtimeClient {
   private socket: WebSocket | null = null;
   private stopped = false;
+  private connectionAttempt = 0;
+  private connecting = false;
   private reconnectAttempt = 0;
   private reconnectTimer: number | null = null;
   private pingTimer: number | null = null;
 
   start() {
+    if (!this.stopped && (this.socket || this.connecting)) return;
     this.stopped = false;
     void this.connect();
   }
 
   stop() {
     this.stopped = true;
+    this.connectionAttempt += 1;
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
     if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
     this.reconnectTimer = null;
@@ -62,8 +66,15 @@ export class RealtimeClient {
   }
 
   private async connect() {
-    if (this.stopped || this.socket) return;
-    const ticket = await issueTicket().catch(() => null);
+    if (this.stopped || this.socket || this.connecting) return;
+    this.connecting = true;
+    const attempt = ++this.connectionAttempt;
+    let ticket: Awaited<ReturnType<typeof issueTicket>>;
+    try { ticket = await issueTicket(); }
+    catch { ticket = null; }
+    this.connecting = false;
+    // A pending ticket request may finish after logout/unmount/stop.
+    if (this.stopped || attempt !== this.connectionAttempt) return;
     if (!ticket) {
       this.scheduleReconnect();
       return;
@@ -72,6 +83,10 @@ export class RealtimeClient {
     let socket: WebSocket;
     try { socket = new WebSocket(websocketURL(ticket.ticket)); }
     catch { this.scheduleReconnect(); return; }
+    if (this.stopped || attempt !== this.connectionAttempt) {
+      socket.close(1000, 'client shutdown');
+      return;
+    }
     this.socket = socket;
 
     socket.onopen = () => {
@@ -92,7 +107,8 @@ export class RealtimeClient {
     };
 
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
+      if (this.socket !== socket) return;
+      this.socket = null;
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = null;
       this.scheduleReconnect();
