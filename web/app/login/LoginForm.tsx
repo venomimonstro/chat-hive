@@ -7,8 +7,10 @@ import { startEmailLogin, startYandexLogin } from '../../lib/api';
 import { rememberReturnTo } from '../../lib/returnTo';
 import { loginWithPasskey } from '../../lib/passkeys';
 import { recordGrowthEvent } from '../../lib/growth';
+import { useLanguage } from '../../lib/language';
 
 export function LoginForm() {
+  const { t } = useLanguage();
   const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'yandex' | 'passkey'>('idle');
@@ -66,9 +68,9 @@ export function LoginForm() {
       <Surface className="authCard">
         <div className="authMark">✓</div>
         <span className="eyebrow">CHAT</span>
-        <h1>Проверьте почту</h1>
-        <p>Мы отправили одноразовую ссылку для входа на <strong>{email}</strong>.</p>
-        <Button variant="secondary" fullWidth onClick={() => setStatus('idle')}>Изменить email</Button>
+        <h1>{t.checkMail}</h1>
+        <p>{t.sentLink} <strong>{email}</strong>.</p>
+        <Button variant="secondary" fullWidth onClick={() => setStatus('idle')}>{t.changeEmail}</Button>
       </Surface>
     );
   }
@@ -76,11 +78,11 @@ export function LoginForm() {
   return (
     <Surface className="authCard">
       <span className="eyebrow">CHAT</span>
-      <h1>Войти в CHAT</h1>
-      <p>Без пароля и SMS. Укажите email — отправим защищённую одноразовую ссылку.</p>
+      <h1>{t.login}</h1>
+      <p>{t.loginIntro}</p>
       <form className="authForm" onSubmit={submit}>
         <label>
-          <span>Email</span>
+          <span>{t.email}</span>
           <input
             type="email"
             autoComplete="email"
@@ -94,17 +96,17 @@ export function LoginForm() {
         </label>
         {error ? <div className="authError" role="alert">{error}</div> : null}
         <Button type="submit" fullWidth disabled={status !== 'idle'}>
-          {status === 'sending' ? 'Отправляем…' : 'Продолжить'}
+          {status === 'sending' ? t.sendingLink : t.continue}
         </Button>
       </form>
-      <div className="authDivider"><span>или</span></div>
+      <div className="authDivider"><span>{t.or}</span></div>
       <Button variant="secondary" fullWidth disabled={status !== 'idle'} onClick={passkeyLogin}>
-        {status === 'passkey' ? 'Проверяем passkey…' : 'Войти с passkey'}
+        {status === 'passkey' ? t.verifying : t.passkey}
       </Button>
       <Button variant="secondary" fullWidth disabled={status !== 'idle'} onClick={loginWithYandex}>
-        {status === 'yandex' ? 'Открываем Яндекс…' : 'Войти через Яндекс ID'}
+        {status === 'yandex' ? t.openingYandex : t.yandex}
       </Button>
-      <small>Продолжая, вы принимаете правила сервиса и политику конфиденциальности.</small>
+      <small>{t.terms}</small>
     </Surface>
   );
 }
