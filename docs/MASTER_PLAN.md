@@ -467,6 +467,31 @@ Passkey testing, Alpha cohort observations and Beta sign-off.
 **Open sprints: 25, 26, 27, 28, 29, 30.**
 Do not mark them DONE based solely on source modifications.
 
+## October 17 — measured correctness and recovery improvements
+
+Implemented and committed directly to `main`, without CI:
+
+- **Sprint 28:** `ced705c` fixes the browser `Headers` test harness and
+  adds 401-versus-503 session tests. `5a82bc5` and `330db23` add bounded
+  exponential retry delays (up to 5 minutes) for the durable offline outbox;
+  manual sends bypass the delay and the existing IndexedDB queue is not
+  discarded. Three retry algorithm regressions passed in an offline Node.js
+  sandbox; this does not replace the full frontend build.
+- **Sprint 25:** `8d91d2a` starts reporting WebSocket health only after
+  server `ready`, with a separate readiness timeout and browser regression
+  cases. `d2fa40f` calculates p95/p99 by nearest rank instead of a
+  downward-biased floor and adds short-sample Go tests.
+- **Sprint 27:** `cf9d3b1` stages media extraction before modifying the
+  restore target, uses transactional `pg_restore --exit-on-error`, and
+  adds offline negative/success restoration scenarios. A real restore drill
+  with a PostgreSQL snapshot and media volume remains mandatory.
+
+**Six open sprint acceptance gates remain (25–30).**
+Actual Go race tests, Next.js production build, media/database restore on
+isolated real infrastructure, the load profile, pentest, Alpha cohort and
+legal/incident sign-off have not been verified. The frontend lockfile is
+still required.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
