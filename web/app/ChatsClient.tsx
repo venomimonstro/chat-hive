@@ -76,6 +76,7 @@ export function ChatsClient() {
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
+  const realtimeConnectedRef = useRef(false);
   const sendingIdsRef = useRef(new Set<string>());
   const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
@@ -197,12 +198,33 @@ export function ChatsClient() {
   }, []);
 
   useEffect(() => {
-    const online = () => void flushOutbox();
-    window.addEventListener('online', online);
-    const timer = window.setInterval(() => { void refreshChats(); void flushOutbox(); }, 5000);
+    const onConnection = (event: Event) => {
+      realtimeConnectedRef.current = (event as CustomEvent<boolean>).detail === true;
+    };
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshChats();
+      void flushOutbox();
+    };
+    window.addEventListener('chat:connection', onConnection);
+    window.addEventListener('online', onForeground);
+    document.addEventListener('visibilitychange', onForeground);
+    // Realtime events refresh immediately. Without a socket, REST is the
+    // recovery path; periodically reconcile even when connected.
+    const fast = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      void flushOutbox();
+      if (!realtimeConnectedRef.current) void refreshChats();
+    }, 5000);
+    const reconcile = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshChats();
+    }, 30000);
     return () => {
-      window.removeEventListener('online', online);
-      window.clearInterval(timer);
+      window.removeEventListener('chat:connection', onConnection);
+      window.removeEventListener('online', onForeground);
+      document.removeEventListener('visibilitychange', onForeground);
+      window.clearInterval(fast);
+      window.clearInterval(reconcile);
     };
   }, []);
 
@@ -253,9 +275,15 @@ export function ChatsClient() {
       .catch((err) => active && setError(err instanceof Error ? err.message : 'Не удалось загрузить сообщения'))
       .finally(() => active && setMessageLoading(false));
 
+    let elapsed = 0;
     const timer = window.setInterval(() => {
-      if (active) void syncLatest(selected.chat_id);
-    }, 3000);
+      if (!active || document.visibilityState !== 'visible') return;
+      elapsed += 5;
+      if (!realtimeConnectedRef.current || elapsed >= 30) {
+        elapsed = 0;
+        void syncLatest(selected.chat_id);
+      }
+    }, 5000);
 
     return () => {
       active = false;

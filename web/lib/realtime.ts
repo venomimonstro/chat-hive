@@ -65,6 +65,7 @@ export class RealtimeClient {
     this.pingTimer = null;
     this.socket?.close(1000, 'client shutdown');
     this.socket = null;
+    window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: false }));
   }
 
   private async connect() {
@@ -95,6 +96,7 @@ export class RealtimeClient {
 
     socket.onopen = () => {
       if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
+      window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
       this.reconnectAttempt = 0;
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => {
@@ -115,6 +117,7 @@ export class RealtimeClient {
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = null;
+      window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: false }));
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = null;
       this.scheduleReconnect();
