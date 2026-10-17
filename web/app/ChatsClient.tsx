@@ -76,6 +76,7 @@ export function ChatsClient() {
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
+  const sendingIdsRef = useRef(new Set<string>());
   const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
 
@@ -147,6 +148,8 @@ export function ChatsClient() {
       let delivered = 0;
       for (const item of items) {
         if (item.user_id !== accountRef.current) break;
+        if (sendingIdsRef.current.has(item.client_message_id)) continue;
+        sendingIdsRef.current.add(item.client_message_id);
         try {
           const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
           await removeOutbox(item.user_id, item.client_message_id);
@@ -159,6 +162,8 @@ export function ChatsClient() {
           }
         } catch {
           // Keep failed item in IndexedDB for a later retry.
+        } finally {
+          sendingIdsRef.current.delete(item.client_message_id);
         }
       }
       if (delivered > 0) await refreshChats();
@@ -300,7 +305,8 @@ export function ChatsClient() {
   }
 
   async function deliver(item: OutboxItem) {
-    if (!accountRef.current || item.user_id !== accountRef.current) return;
+    if (!accountRef.current || item.user_id !== accountRef.current || sendingIdsRef.current.has(item.client_message_id)) return;
+    sendingIdsRef.current.add(item.client_message_id);
     setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'sending' } : message));
     try {
       const session = await getCurrentSession();
@@ -311,6 +317,8 @@ export function ChatsClient() {
       await refreshChats();
     } catch {
       setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'failed' } : message));
+    } finally {
+      sendingIdsRef.current.delete(item.client_message_id);
     }
   }
 
@@ -343,7 +351,7 @@ export function ChatsClient() {
     try {
       await enqueueOutbox(item);
     } catch {
-      setError('Не удалось сохранить сообщение локально. Освободите место в браузере и попробуйте снова.');
+      setError('Не удалось сохранить сообщение. Проверьте свободное место и очередь неотправленных сообщений.');
       return;
     }
     setDraft('');
