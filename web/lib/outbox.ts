@@ -13,7 +13,6 @@ const DB_NAME = 'chat-client';
 const DB_VERSION = 2;
 const STORE = 'outbox_scoped';
 const MAX_ITEMS = 500;
-const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Old records lack verified ownership; preserve them for manual recovery,
 // but never replay another account's messages after a login change.
@@ -64,11 +63,29 @@ function requireUser(userId: string) {
 export async function enqueueOutbox(item: OutboxItem) {
   requireUser(item.user_id);
   await transaction<void>('readwrite', (store, done, fail) => {
-    const request = store.put(item);
-    request.onsuccess = () => done();
-    request.onerror = () => fail(request.error);
+    // Capacity is checked in the SAME write transaction as the insert so
+    // concurrent tabs cannot discard older messages or exceed the limit.
+    const existing = store.get(item.client_message_id);
+    existing.onerror = () => fail(existing.error);
+    existing.onsuccess = () => {
+      const current = existing.result as OutboxItem | undefined;
+      if (current && current.user_id !== item.user_id) {
+        fail(new Error('Outbox message ID belongs to another account'));
+        return;
+      }
+      const count = store.index('by_user').count(item.user_id);
+      count.onerror = () => fail(count.error);
+      count.onsuccess = () => {
+        if (!current && count.result >= MAX_ITEMS) {
+          fail(new Error('Очередь сообщений заполнена. Подключитесь к интернету и отправьте сохранённые сообщения.'));
+          return;
+        }
+        const write = store.put(item);
+        write.onsuccess = () => done();
+        write.onerror = () => fail(write.error);
+      };
+    };
   });
-  await pruneOutbox(item.user_id);
 }
 
 export async function removeOutbox(userId: string, clientMessageId: string) {
@@ -108,15 +125,3 @@ export async function findOutbox(userId: string, clientMessageId: string): Promi
   return item?.user_id === userId ? item : null;
 }
 
-export async function pruneOutbox(userId: string) {
-  const items = await listOutbox(userId);
-  const threshold = Date.now() - MAX_AGE_MS;
-  const expired = items.filter((item) => {
-    const time = Date.parse(item.created_at);
-    return !Number.isFinite(time) || time < threshold;
-  });
-  const overflow = items.length > MAX_ITEMS ? items.slice(0, items.length - MAX_ITEMS) : [];
-  for (const id of new Set([...expired, ...overflow].map((item) => item.client_message_id))) {
-    await removeOutbox(userId, id);
-  }
-}
