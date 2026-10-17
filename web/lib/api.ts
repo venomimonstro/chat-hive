@@ -347,3 +347,18 @@ export async function joinGroupByInvite(token: string): Promise<Group> {
   if (!response.ok) throw new Error(await parseError(response));
   return response.json() as Promise<Group>;
 }
+export type Language = 'ru' | 'en';
+export async function getLanguagePreference(): Promise<Language> {
+  const response = await request('/api/v1/me/preferences');
+  if (!response.ok) throw new Error(await parseError(response));
+  const data = await response.json() as { language: string };
+  return data.language === 'en' ? 'en' : 'ru';
+}
+export async function saveLanguagePreference(language: Language): Promise<Language> {
+  const response = await request('/api/v1/me/preferences', {
+    method: 'PUT', body: JSON.stringify({ language })
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  const data = await response.json() as { language: string };
+  return data.language === 'en' ? 'en' : 'ru';
+}
