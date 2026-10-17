@@ -59,16 +59,20 @@ func (h *HTTPHandler) issueTicket(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) connect(w http.ResponseWriter, r *http.Request) {
 	// Reject foreign browser origins before consuming one-use tickets.
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Host, h.originPattern) ||
-			parsed.Scheme != h.originScheme || parsed.User != nil || parsed.Path != "" ||
-			parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
-			writeError(w, http.StatusForbidden, "invalid_origin", "Origin is not allowed")
-			return
-		}
-	}
+    origin := strings.TrimSpace(r.Header.Get("Origin"))
+    // CHAT core supports browser WebSocket sessions only. An absent Origin
+    // must never bypass the allowlist via native/scripted clients possessing
+    // a leaked or misdirected short-lived websocket ticket.
+    parsed, err := url.Parse(origin)
+    if origin == "" || err != nil || parsed.Host == "" ||
+        h.originPattern == "" || h.originScheme == "" ||
+        !strings.EqualFold(parsed.Host,h.originPattern) ||
+        parsed.Scheme != h.originScheme || parsed.User != nil ||
+        parsed.Path != "" || parsed.RawQuery != "" ||
+        parsed.Fragment != "" || parsed.Opaque != "" {
+        writeError(w,http.StatusForbidden,"invalid_origin","Origin is not allowed")
+        return
+    }
 	userID, ok := h.tickets.Consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Realtime ticket is invalid or expired")

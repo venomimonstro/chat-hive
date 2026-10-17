@@ -75,3 +75,19 @@ func TestInsecureSameHostOriginCannotBurnTicket(t *testing.T) {
 		t.Fatalf("invalid origins consumed valid ticket; user=%q valid=%v", userID, valid)
 	}
 }
+
+func TestMissingWebsocketOriginFailsClosedWithoutConsumingTicket(t *testing.T) {
+ tickets:=NewTicketManager()
+ token,_,err:=tickets.Issue("browser-user")
+ if err!=nil {t.Fatal(err)}
+ handler:=&HTTPHandler{tickets:tickets,originPattern:"chat.example.ru",originScheme:"https"}
+ request:=httptest.NewRequest(http.MethodGet,"/api/v1/realtime?ticket="+token,nil)
+ response:=httptest.NewRecorder()
+ handler.connect(response,request)
+ if response.Code!=http.StatusForbidden {
+     t.Fatalf("missing Origin accepted: status=%d",response.Code)
+ }
+ if userID,ok:=tickets.Consume(token);!ok||userID!="browser-user" {
+     t.Fatalf("missing Origin consumed valid ticket: %q %v",userID,ok)
+ }
+}
