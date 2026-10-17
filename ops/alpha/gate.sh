@@ -19,6 +19,20 @@ fail(){ printf 'ALPHA BLOCKED: %s\n' "$*" >&2; exit 1; }
 step(){ printf '\n==> %s\n' "$*"; }
 
 [[ "$ALPHA_URL" == https://* ]] || fail "CHAT_ALPHA_URL must be an https URL"
+[[ "${CHAT_SKIP_MIGRATION_VERIFY:-0}" != "1" ]] || fail "Alpha cannot bypass clean migration verification"
+
+# Zero workers with non-zero requests can deadlock the load harness. Reject
+# invalid load profiles before the gate starts a destructive/external run.
+positive_integer() {
+  local label="$1" value="$2"
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$label must be a positive integer"
+}
+positive_integer CHAT_ALPHA_WS_CONCURRENCY "$WS_CONCURRENCY"
+positive_integer CHAT_ALPHA_RECONNECT_WORKERS "$RECONNECT_WORKERS"
+positive_integer CHAT_ALPHA_RECONNECT_ROUNDS "$RECONNECT_ROUNDS"
+positive_integer CHAT_ALPHA_MESSAGE_REQUESTS "$MESSAGE_REQUESTS"
+positive_integer CHAT_ALPHA_MESSAGE_CONCURRENCY "$MESSAGE_CONCURRENCY"
+
 [[ -n "$ACCESS_TOKEN" ]] || fail "CHAT_ALPHA_ACCESS_TOKEN is required for the full Alpha gate"
 [[ -n "$CHAT_ID" ]] || fail "CHAT_ALPHA_CHAT_ID is required for message load validation"
 [[ -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]] || fail "CHAT_ALPHA_BACKUP_DIR must point to a completed backup"
