@@ -5,12 +5,32 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/AppShell';
 import { Avatar, Button, Surface } from '../../components/ui';
 import { decideMessageRequest, listMessageRequests, MessageRequest } from '../../lib/messageRequests';
+import { useLanguage } from '../../lib/language';
+const requestEN: Record<string,string> = {
+  "БЕЗОПАСНОСТЬ": "PRIVACY",
+  "Запросы": "Message requests",
+  "Назад": "Back",
+  "Загружаем запросы…": "Loading message requests…",
+  "Новых запросов нет": "No new requests",
+  "Сообщения от незнакомых людей будут появляться здесь, а не среди обычных чатов.": "Messages from new contacts appear here before entering your regular chats.",
+  "общих интересов": "shared interests",
+  "общих подписок": "mutual connections",
+  "Новый контакт": "New contact",
+  "Пользователь хочет начать разговор.": "Someone wants to start a conversation.",
+  "Принять": "Accept",
+  "Удалить": "Decline",
+  "Профиль": "Profile",
+  "Не удалось загрузить запросы": "Could not load requests",
+  "Не удалось обработать запрос": "Could not process request"
+};
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+function formatDate(value: string, language: 'ru' | 'en' = 'ru') {
+  return new Date(value).toLocaleString(language === 'en' ? 'en-US' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 export default function RequestsPage() {
+  const { language, t } = useLanguage();
+  const tr = (value: string) => language === 'en' ? (requestEN[value] ?? value) : value;
   const router = useRouter();
   const [items, setItems] = useState<MessageRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +46,7 @@ export default function RequestsPage() {
         router.replace('/login');
         return;
       }
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить запросы');
+      setError(err instanceof Error ? err.message : tr("Не удалось загрузить запросы"));
     } finally {
       setLoading(false);
     }
@@ -43,7 +63,7 @@ export default function RequestsPage() {
       setItems((current) => current.filter((request) => request.chat_id !== item.chat_id));
       if (accept) router.push(`/?chat=${encodeURIComponent(item.chat_id)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось обработать запрос');
+      setError(err instanceof Error ? err.message : tr("Не удалось обработать запрос"));
     } finally {
       setBusy('');
     }
@@ -52,31 +72,31 @@ export default function RequestsPage() {
   return (
     <AppShell active="Чаты">
       <header className="screenHeader">
-        <div><span className="eyebrow">БЕЗОПАСНОСТЬ</span><h1>Запросы</h1></div>
+        <div><span className="eyebrow">{tr("БЕЗОПАСНОСТЬ")}</span><h1>{tr("Запросы")}</h1></div>
         <a href="/" aria-label="Назад">←</a>
       </header>
       <main className="requestInbox">
-        {loading ? <p className="chatListState">Загружаем запросы…</p> : null}
+        {loading ? <p className="chatListState">{tr("Загружаем запросы…")}</p> : null}
         {error ? <p className="messengerError" role="alert">{error}</p> : null}
         {!loading && !error && items.length === 0 ? (
-          <Surface className="requestEmpty"><strong>Новых запросов нет</strong><p>Сообщения от незнакомых людей будут появляться здесь, а не среди обычных чатов.</p></Surface>
+          <Surface className="requestEmpty"><strong>{tr("Новых запросов нет")}</strong><p>{tr("Сообщения от незнакомых людей будут появляться здесь, а не среди обычных чатов.")}</p></Surface>
         ) : null}
         {items.map((item) => (
           <Surface className="requestCard" key={item.chat_id}>
             <div className="requestPerson">
               <Avatar name={item.display_name || item.username} />
-              <div><a href={`/u/${item.username}`}><strong>{item.display_name || item.username}</strong></a><span>@{item.username} · {formatDate(item.created_at)}</span></div>
+              <div><a href={`/?chat=${encodeURIComponent(item.chat_id)}`}><strong>{item.display_name || item.username}</strong></a><span>@{item.username} · {formatDate(item.created_at, language)}</span></div>
             </div>
             <div className="requestSignals">
-              {item.shared_interests > 0 ? <span>{item.shared_interests} общих интересов</span> : null}
-              {item.mutual_followers > 0 ? <span>{item.mutual_followers} общих подписок</span> : null}
-              {!item.shared_interests && !item.mutual_followers ? <span>Новый контакт</span> : null}
+              {item.shared_interests > 0 ? <span>{item.shared_interests} {tr('общих интересов')}</span> : null}
+              {item.mutual_followers > 0 ? <span>{item.mutual_followers} {tr('общих подписок')}</span> : null}
+              {!item.shared_interests && !item.mutual_followers ? <span>{tr("Новый контакт")}</span> : null}
             </div>
-            <p className="requestMessage">{item.body || 'Пользователь хочет начать разговор.'}</p>
+            <p className="requestMessage">{item.body || tr("Пользователь хочет начать разговор.")}</p>
             <div className="requestActions">
-              <Button onClick={() => void decide(item, true)} disabled={busy === item.chat_id}>Принять</Button>
-              <Button variant="secondary" onClick={() => void decide(item, false)} disabled={busy === item.chat_id}>Удалить</Button>
-              <a className="uiButton uiButton--ghost" href={`/u/${item.username}`}>Профиль</a>
+              <Button onClick={() => void decide(item, true)} disabled={busy === item.chat_id}>{tr("Принять")}</Button>
+              <Button variant="secondary" onClick={() => void decide(item, false)} disabled={busy === item.chat_id}>{tr("Удалить")}</Button>
+              
             </div>
           </Surface>
         ))}
