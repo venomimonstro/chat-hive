@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"io"
 	"net/http"
 	"net/url"
@@ -328,7 +329,21 @@ func exceedsP95(samples []time.Duration, threshold time.Duration) bool {
 	return threshold > 0 && (len(samples)==0 || percentile(samples,.95)>threshold)
 }
 
-func percentile(values []time.Duration,p float64)time.Duration{if len(values)==0{return 0};index:=int(float64(len(values)-1)*p);if index<0{index=0};if index>=len(values){index=len(values)-1};return values[index]}
+// percentile applies the nearest-rank rule: rank = ceil(p*N). Flooring
+// (N-1)*p would hide the slowest request for small or medium samples.
+func percentile(values []time.Duration, p float64) time.Duration {
+	if len(values) == 0 {
+		return 0
+	}
+	index := int(math.Ceil(p*float64(len(values)))) - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(values) {
+		index = len(values) - 1
+	}
+	return values[index]
+}
 func newUUID()string{raw:=make([]byte,16);if _,err:=rand.Read(raw);err!=nil{panic(err)};raw[6]=(raw[6]&0x0f)|0x40;raw[8]=(raw[8]&0x3f)|0x80;value:=hex.EncodeToString(raw);return value[0:8]+"-"+value[8:12]+"-"+value[12:16]+"-"+value[16:20]+"-"+value[20:32]}
 func env(key,fallback string)string{if value:=strings.TrimSpace(os.Getenv(key));value!=""{return value};return fallback}
 func fatal(message string){fmt.Fprintln(os.Stderr,message);os.Exit(2)}

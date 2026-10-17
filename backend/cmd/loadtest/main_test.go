@@ -37,3 +37,28 @@ func TestP95Budget(t *testing.T) {
 	if exceedsP95(values,0) { t.Fatal("zero disables threshold") }
 	if !exceedsP95(nil,time.Second) { t.Fatal("positive threshold must fail without data") }
 }
+
+func TestPercentileUsesNearestRankOnShortSamples(t *testing.T) {
+    cases := []struct{
+        name string
+        samples []time.Duration
+        p float64
+        want time.Duration
+    }{
+        {"two p95", []time.Duration{10*time.Millisecond, 900*time.Millisecond}, .95, 900*time.Millisecond},
+        {"four p95", []time.Duration{10*time.Millisecond, 20*time.Millisecond, 40*time.Millisecond, 90*time.Millisecond}, .95, 90*time.Millisecond},
+        {"ten p95", []time.Duration{1,2,3,4,5,6,7,8,9,10}, .95, 10},
+        {"twenty p95", []time.Duration{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}, .95, 19},
+        {"p50", []time.Duration{1,2,3,4}, .50, 2},
+        {"empty", nil, .95, 0},
+        {"above 100%", []time.Duration{10,20}, 2, 20},
+    }
+    for _, testCase := range cases {
+        t.Run(testCase.name, func(t *testing.T) {
+            got := percentile(testCase.samples, testCase.p)
+            if got != testCase.want {
+                t.Fatalf("percentile(%v, %.2f)=%v, expected %v", testCase.samples,testCase.p,got,testCase.want)
+            }
+        })
+    }
+}
