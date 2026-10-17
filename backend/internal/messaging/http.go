@@ -23,7 +23,9 @@ func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logge
 	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
-func (h *HTTPHandler) Register(mux *http.ServeMux) {
+// RegisterCore installs only endpoints needed for personal text messaging.
+// Future reaction handlers must not be present in the core ServeMux at all.
+func (h *HTTPHandler) RegisterCore(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/chats/direct", h.createDirect)
 	mux.HandleFunc("GET /api/v1/chats", h.listChats)
 	mux.HandleFunc("GET /api/v1/chats/{chat_id}/messages", h.listMessages)
@@ -31,6 +33,10 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/chats/{chat_id}/read", h.markRead)
 	mux.HandleFunc("PUT /api/v1/messages/{message_id}", h.editMessage)
 	mux.HandleFunc("DELETE /api/v1/messages/{message_id}", h.deleteMessage)
+}
+
+func (h *HTTPHandler) Register(mux *http.ServeMux) {
+	h.RegisterCore(mux)
 	mux.HandleFunc("GET /api/v1/messages/{message_id}/reactions", h.listReactions)
 	mux.HandleFunc("PUT /api/v1/messages/{message_id}/reactions/{reaction}", h.addReaction)
 	mux.HandleFunc("DELETE /api/v1/messages/{message_id}/reactions/{reaction}", h.removeReaction)

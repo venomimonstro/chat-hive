@@ -23,6 +23,11 @@ func NewHTTPHandler(service *Service, auth *identity.Service, logger *slog.Logge
 	return &HTTPHandler{service: service, guard: authhttp.New(auth), logger: logger}
 }
 
+func (h *HTTPHandler) RegisterCore(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/v1/profiles/{username}/block", h.block)
+	mux.HandleFunc("DELETE /api/v1/profiles/{username}/block", h.unblock)
+}
+
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/profiles/{username}", h.getProfile)
 	mux.HandleFunc("GET /api/v1/profiles/{username}/followers", h.followers)

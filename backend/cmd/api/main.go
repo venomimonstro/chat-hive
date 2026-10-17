@@ -141,9 +141,14 @@ func main() {
     app.Register(accountDataHTTP.Register)
     app.Register(preferencesHTTP.Register)
     app.Register(onboardingHTTP.Register)
-    app.Register(socialHTTP.Register) // Contact block/unblock; core route gate hides the social graph.
+    if coreLaunch {
+        app.Register(socialHTTP.RegisterCore)
+        app.Register(messagingHTTP.RegisterCore)
+    } else {
+        app.Register(socialHTTP.Register)
+        app.Register(messagingHTTP.Register)
+    }
     app.Register(growthHTTP.Register)
-    app.Register(messagingHTTP.Register)
     app.Register(requestHTTP.Register)
     app.Register(adminHTTP.Register) // Privileged operational oversight.
     app.Register(realtimeHTTP.Register)
