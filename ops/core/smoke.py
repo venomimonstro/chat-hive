@@ -53,6 +53,10 @@ def run():
     opener = build_opener(NoRedirect, HTTPSHandler(context=ssl.create_default_context()))
     code,_ = request(opener,origin,"GET","/health/ready")
     need(200,code,"readiness")
+    code,meta = request(opener,origin,"GET","/api/v1")
+    need(200,code,"service metadata")
+    if meta.get("launch_mode") != "core":
+        raise RuntimeError("server is not in restricted core launch mode")
     code,sess_a = request(opener,origin,"GET","/api/v1/auth/session",a)
     need(200,code,"session A")
     code,sess_b = request(opener,origin,"GET","/api/v1/auth/session",b)

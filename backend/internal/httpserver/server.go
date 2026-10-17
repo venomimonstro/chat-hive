@@ -80,8 +80,10 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ready", Service: "chat-api"})
 	})
 	s.mux.HandleFunc("GET /api/v1", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"service": "chat-api", "version": "v1"})
-	})
+        mode := "full"
+        if s.coreLaunch { mode = "core" }
+        writeJSON(w, http.StatusOK, map[string]string{"service":"chat-api","version":"v1","launch_mode":mode})
+    })
 }
 
 func loadSheddingMiddleware(degraded func() bool, next http.Handler) http.Handler {

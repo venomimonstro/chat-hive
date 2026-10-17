@@ -181,3 +181,13 @@ func TestRateLimiterHasHardMemoryCeiling(t *testing.T) {
         t.Fatalf("unbounded number of buckets: %d",len(limiter.buckets))
     }
 }
+
+func TestCoreLaunchMetadataIsExplicit(t *testing.T) {
+    server := New(testLogger())
+    server.SetCoreLaunch(true)
+    result := httptest.NewRecorder()
+    server.Handler().ServeHTTP(result, httptest.NewRequest("GET", "/api/v1", nil))
+    if result.Code != http.StatusOK || !strings.Contains(result.Body.String(), "\"launch_mode\":\"core\"") {
+        t.Fatalf("core mode not reported: %d %s", result.Code, result.Body.String())
+    }
+}
