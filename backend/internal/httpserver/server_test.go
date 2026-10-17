@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -125,4 +126,27 @@ func TestLoadSheddingReturnsRetryable503(t *testing.T) {
 	if res.Code != http.StatusServiceUnavailable { t.Fatalf("expected 503, got %d", res.Code) }
 	if nextCalled { t.Fatal("deferrable request reached downstream handler") }
 	if got := res.Header().Get("Retry-After"); got != "5" { t.Fatalf("expected Retry-After=5, got %q", got) }
+}
+
+func TestRequestIDRejectsUntrustedLogCharacters(t *testing.T) {
+	handler := New(testLogger()).Handler()
+	for _, tc := range []struct {
+		input string
+		valid bool
+	}{
+		{"external-id_123.ok", true},
+		{"line\\nbreak", false},
+		{"name with spaces", false},
+		{"../../secret", false},
+		{strings.Repeat("a", 129), false},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1", nil)
+		req.Header.Set("X-Request-ID", tc.input)
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		got := res.Header().Get("X-Request-ID")
+		if !validRequestID(got) { t.Fatalf("generated trace ID is invalid: %q", got) }
+		if tc.valid && got != tc.input { t.Fatalf("valid ID was replaced: %q", got) }
+		if !tc.valid && got == tc.input { t.Fatalf("unsafe ID was accepted: %q", got) }
+	}
 }

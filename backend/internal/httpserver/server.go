@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -219,11 +221,32 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func validRequestID(value string) bool {
+	if len(value) == 0 || len(value) > 64 { return false }
+	for _, character := range value {
+		if !((character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+func newRequestID() string {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err == nil {
+		return hex.EncodeToString(bytes[:])
+	}
+	return time.Now().UTC().Format("20060102T150405.000000000")
+}
+
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
-		if requestID == "" || len(requestID) > 128 {
-			requestID = time.Now().UTC().Format("20060102T150405.000000000")
+		requestID := r.Header.Get("X-Request-ID")
+		if !validRequestID(requestID) {
+			requestID = newRequestID()
 		}
 		w.Header().Set("X-Request-ID", requestID)
 		next.ServeHTTP(w, r)
