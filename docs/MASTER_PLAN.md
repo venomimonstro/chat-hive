@@ -305,6 +305,23 @@ bash ops/beta/gate.sh
 
 The Alpha/Beta gates require their documented environment values, live target hosts and external evidence. They must not be marked PASS from source inspection alone. Do not fabricate the npm lockfile or replace deterministic `npm ci` with an uncontrolled install in production.
 
+## October 17 implementation continuation
+
+- Sprint 25: corrected the Go load harness to measure elapsed wall time only
+  after responses complete, reject unexpected status codes/incomplete results,
+  and validate WebSocket readiness; unit tests added (`1265e25`).
+  Real server performance evidence is still required.
+- Sprint 26: Web Locks now serializes rotating refresh cookies across tabs
+  (`e03fda4`), with concurrency and outage tests (`b32cf08`).
+  Production security review and independent pentest remain outstanding.
+- Sprint 27: added archive traversal/symlink verification with offline tests
+  (`b56d517`), isolated media extraction in the restore drill (`94313c6`),
+  and safer preflight before destructive restore (`0c7ad0f`).
+  Production-like restoration and measured RPO/RTO remain outstanding.
+- Sprint 28: added `ops/release/prepare-lockfile.sh` to generate and
+  validate real npm dependency locks on a machine with registry access.
+  The lockfile must still be committed and a full release gate passed.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
