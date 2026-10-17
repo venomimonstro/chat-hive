@@ -131,15 +131,22 @@ export function useLanguage() {
       } catch { /* Offline or logged out: retain the local language. */ }
     };
     void load();
+    const onAccountChange = () => {
+      // A new login must not inherit cached language from a former user.
+      accountLanguagePromise = null;
+      accountLanguageUser = '';
+      accountLanguageExpires = 0;
+      void load();
+    };
     window.addEventListener(EVENT, sync);
     window.addEventListener('storage', sync);
-    window.addEventListener('chat:auth-changed', load);
+    window.addEventListener('chat:auth-changed', onAccountChange);
     return () => {
       active = false;
       revision++;
       window.removeEventListener(EVENT, sync);
       window.removeEventListener('storage', sync);
-      window.removeEventListener('chat:auth-changed', load);
+      window.removeEventListener('chat:auth-changed', onAccountChange);
     };
   }, []);
 
