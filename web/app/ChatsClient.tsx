@@ -71,6 +71,7 @@ export function ChatsClient() {
   const [newUsername, setNewUsername] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
   const [creatingChat, setCreatingChat] = useState(false);
+  const createPendingRef = useRef(false);
   const [networkOnline, setNetworkOnline] = useState(true);
   const [showOfflineWarning, setShowOfflineWarning] = useState(false);
   const [activeActions, setActiveActions] = useState('');
@@ -503,7 +504,8 @@ export function ChatsClient() {
   async function createChat(event: FormEvent) {
     event.preventDefault();
     const username = newUsername.trim().replace(/^@/, '').toLowerCase();
-    if (!/^[a-z0-9_]{3,32}$/.test(username) || creatingChat) return;
+    if (!/^[a-z0-9_]{3,32}$/.test(username) || createPendingRef.current) return;
+    createPendingRef.current = true;
     setError('');
     setCreatingChat(true);
     try {
@@ -515,6 +517,7 @@ export function ChatsClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось создать диалог');
     } finally {
+      createPendingRef.current = false;
       setCreatingChat(false);
     }
   }
@@ -647,7 +650,7 @@ export function ChatsClient() {
           {!selected && error ? <div className="messengerError" role="alert">{error}</div> : null}
           {showOfflineWarning ? <div className="networkBanner" role="status">{language === 'en' ? 'Offline. Messages will be queued on this device.' : 'Нет интернета. Сообщения будут сохранены в очереди на устройстве.'}</div> : null}
 
-          <div className="chatList" aria-label={t.chats}>
+          <div className="chatList" aria-label={t.chats} role="region">
             {loading ? <div className="chatSkeletons" aria-label={t.loadingChats}>
               {[1,2,3,4,5].map((item) => <div className="chatSkeletonRow" key={item}>
                 <Skeleton width={44} height={44}/>
