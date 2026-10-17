@@ -441,6 +441,32 @@ The above commits are source changes; the full Go race test, Next.js build,
 real-host load measurement, actual media+database restore and security
 assessment are **not yet verified**. Sprints 25–30 remain IN PROGRESS.
 
+## October 17 — authentication, push, and WebSocket stability
+
+Implemented in source and pushed directly to `main`:
+
+- **Sprint 28:** `331ac1f` stops treating profile API errors as
+  an absent onboarding profile; a failure now blocks submission with a
+  retry button. Browser regression cases distinguish HTTP 503 and an
+  incomplete-but-valid profile.
+- **Sprint 26:** `7248f34` prevents an in-flight refresh from
+  restoring a logged-out or replaced account's access token, including a
+  stale 401 response. `7109acf` only removes the browser push
+  subscription after the server confirms endpoint revocation; tests
+  cover logged-out users, 503 failures, and successful revocation.
+- **Sprint 27:** `1e9ab37` refuses installation of a root-run backup
+  timer from a non-root-owned writable code checkout or credentials file.
+- **Sprint 25:** `bdc9feb` adds a 15-second WebSocket handshake timeout
+  and reconnection, with a regression case; `ecd619c` prevents stale
+  sockets from canceling the newer connection's watchdog.
+
+**Acceptance is still pending:** genuine `web/package-lock.json`,
+successful frontend build and Go race tests, clean migrations, real-host
+load and disaster-recovery runs, independent pentest, physical-device
+Passkey testing, Alpha cohort observations and Beta sign-off.
+**Open sprints: 25, 26, 27, 28, 29, 30.**
+Do not mark them DONE based solely on source modifications.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
