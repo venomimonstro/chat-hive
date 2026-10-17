@@ -104,7 +104,7 @@ step "5/6 realtime connection and reconnect validation"
 )
 
 step "6/6 isolated restore drill"
-sh ops/backup/drill.sh "$BACKUP_DIR"
+CHAT_DRILL_MAX_BACKUP_AGE_SECONDS="${CHAT_ALPHA_MAX_BACKUP_AGE_SECONDS:-86400}" sh ops/backup/drill.sh "$BACKUP_DIR"
 
 step "post-run host resources"
 resource_snapshot

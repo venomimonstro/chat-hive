@@ -11,6 +11,7 @@ fi
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 2; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 2; }
+command -v python3 >/dev/null 2>&1 || { echo "Python 3 is required" >&2; exit 2; }
 
 BACKUP_PATH="$(CDPATH= cd -- "$BACKUP_PATH" && pwd)"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -43,6 +44,9 @@ echo "[drill] verifying backup checksums"
     grep -qx 'media=none' manifest.txt
   fi
 )
+
+echo "[drill] verifying backup recency"
+python3 "$SCRIPT_DIR/check_backup_age.py" "$BACKUP_PATH/manifest.txt" --max-age "${CHAT_DRILL_MAX_BACKUP_AGE_SECONDS:-0}"
 
 echo "[drill] starting isolated PostgreSQL"
 docker run -d --rm --name "$NAME"   -e POSTGRES_DB="$DB"   -e POSTGRES_USER="$USER"   -e POSTGRES_PASSWORD="$PASSWORD"   -v "$BACKUP_PATH:/backup:ro"   "$IMAGE" >/dev/null

@@ -86,3 +86,14 @@ After restore, run application migrations in verification mode, start an isolate
 - Quarterly restore drills before scale; monthly after business-critical adoption.
 - Record `ops/backup/drill.sh` output, restore duration and resulting RPO/RTO in an incident/DR log.
 - A successful backup job without a recent successful restore drill does not satisfy the release gate.
+
+## Recovery-point recency gate
+
+The isolated drill reports the backup age in seconds using the checksummed
+`manifest.txt`. `CHAT_DRILL_MAX_BACKUP_AGE_SECONDS=0` only reports age;
+a positive value fails the drill when it exceeds the allowed age.
+The Closed Alpha gate uses a default budget of **86,400 seconds (24 hours)**
+and accepts `CHAT_ALPHA_MAX_BACKUP_AGE_SECONDS` to impose a stricter policy.
+This is a freshness check (the worst-case loss interval since the snapshot),
+**not proof of transaction-level RPO**. A successful restore is still required.
+
