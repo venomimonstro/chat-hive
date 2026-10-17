@@ -439,14 +439,21 @@ export function ChatsClient() {
   useEffect(() => {
     if (!selected?.chat_id) return;
     const key = selected.chat_id;
+    // React effects see state from the previous render when the selected
+    // chat changes. Never store another chat's history under this key.
+    // A zero-message initial state must not overwrite a valid cached page.
+    const scoped = messages.filter((item) => item.chat_id === key);
+    if (scoped.length !== messages.length) return;
+    const previous = historyCacheRef.current.get(key);
+    if (scoped.length === 0 && previous?.messages.length && messageLoading) return;
     historyCacheRef.current.delete(key);
-    historyCacheRef.current.set(key, { messages, hasOlder });
+    historyCacheRef.current.set(key, { messages: scoped, hasOlder });
     while (historyCacheRef.current.size > HISTORY_CACHE_LIMIT) {
       const oldest = historyCacheRef.current.keys().next().value;
       if (oldest === undefined) break;
       historyCacheRef.current.delete(oldest);
     }
-  }, [selected?.chat_id, messages, hasOlder]);
+  }, [selected?.chat_id, messages, hasOlder, messageLoading]);
 
   useLayoutEffect(() => {
     const pane = messageListRef.current;
@@ -471,7 +478,13 @@ export function ChatsClient() {
     return chats.filter((chat) => chat.kind === 'direct').filter((chat) => `${chatName(chat)} ${chat.peer_username ?? ''}`.toLowerCase().includes(needle));
   }, [chats, search]);
 
-  const messageByID = useMemo(() => new Map(messages.filter((item) => !item.local_status).map((item) => [item.id, item])), [messages]);
+  // Never render a previous conversation's messages during React's
+  // transitional render before selection effects have applied.
+  const visibleMessages = useMemo(
+    () => messages.filter((item) => item.chat_id === selected?.chat_id),
+    [messages, selected?.chat_id]
+  );
+  const messageByID = useMemo(() => new Map(visibleMessages.filter((item) => !item.local_status).map((item) => [item.id, item])), [visibleMessages]);
 
   async function loadOlder() {
     if (!selected || olderLoading || !hasOlder) return;
@@ -690,7 +703,7 @@ export function ChatsClient() {
                 {messageLoading && messages.length === 0 ? <div className="messageSkeleton" aria-label={t.loadingHistory}>
                   <Skeleton width="48%" height={36}/><Skeleton width="63%" height={48}/><Skeleton width="42%" height={36}/>
                 </div> : null}
-                {messages.map((message) => {
+                {visibleMessages.map((message) => {
                   const mine = message.sender_id === userId;
                   const replied = message.reply_to_id ? messageByID.get(message.reply_to_id) : undefined;
                   return (
