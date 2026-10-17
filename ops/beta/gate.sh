@@ -7,6 +7,7 @@ cd "$ROOT"
 DB_URL="${CHAT_BETA_DATABASE_URL:-}"
 PENTEST_REPORT="${CHAT_BETA_PENTEST_REPORT:-}"
 LEGAL_SIGNOFF="${CHAT_BETA_LEGAL_SIGNOFF:-}"
+EXTERNAL_ATTESTATION="${CHAT_BETA_EXTERNAL_ATTESTATION:-}"
 PRODUCT_RECORD="${CHAT_BETA_PRODUCT_ITERATION_RECORD:-}"
 PRODUCT_BASELINE="${CHAT_BETA_METRICS_BASELINE:-}"
 PRODUCT_FOLLOWUP="${CHAT_BETA_METRICS_FOLLOWUP:-}"
@@ -17,6 +18,11 @@ step(){ printf '\n==> %s\n' "$*"; }
 [[ -n "$DB_URL" ]] || fail "CHAT_BETA_DATABASE_URL is required"
 [[ -n "$PENTEST_REPORT" && -s "$PENTEST_REPORT" ]] || fail "CHAT_BETA_PENTEST_REPORT must point to a non-empty report"
 [[ -n "$LEGAL_SIGNOFF" && -s "$LEGAL_SIGNOFF" ]] || fail "CHAT_BETA_LEGAL_SIGNOFF must point to a non-empty legal/compliance sign-off"
+[[ -n "$EXTERNAL_ATTESTATION" && -s "$EXTERNAL_ATTESTATION" ]] || fail "CHAT_BETA_EXTERNAL_ATTESTATION is required"
+command -v git >/dev/null 2>&1 || fail "git is required for release attestation"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required for release attestation"
+COMMIT="$(git rev-parse HEAD)"
+python3 ops/beta/validate_attestation.py "$EXTERNAL_ATTESTATION" "$PENTEST_REPORT" "$LEGAL_SIGNOFF" "$COMMIT" || fail "External evidence does not match this release"
 command -v psql >/dev/null 2>&1 || fail "psql is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 [[ -n "$PRODUCT_RECORD" && -s "$PRODUCT_RECORD" ]] || fail "CHAT_BETA_PRODUCT_ITERATION_RECORD is required"
@@ -54,7 +60,7 @@ critical_cases="$(psql "$DB_URL" -At -v ON_ERROR_STOP=1 -c "
 [[ "$critical_cases" == "0" ]] || fail "$critical_cases critical moderation case(s) remain open"
 
 step "5/5 external evidence"
-printf "pentest_report=%s\nlegal_signoff=%s\nproduct_iteration_record=%s\n" "$PENTEST_REPORT" "$LEGAL_SIGNOFF" "$PRODUCT_RECORD"
+printf "pentest_report=%s\nlegal_signoff=%s\nproduct_iteration_record=%s\nattestation=%s\n" "$PENTEST_REPORT" "$LEGAL_SIGNOFF" "$PRODUCT_RECORD" "$EXTERNAL_ATTESTATION"
 
 printf '\nPUBLIC BETA TECHNICAL/OPERATIONAL GATE PASS\n'
 printf 'External documents were required and present. Final launch decision remains an owner/legal/security decision.\n'

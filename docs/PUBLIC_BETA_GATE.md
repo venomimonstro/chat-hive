@@ -114,3 +114,32 @@ unset CHAT_PRODUCT_ACCESS_TOKEN
 ```
 
 Store snapshots and comparison records off Git and in access-controlled storage.
+
+### External attestation record (mandatory)
+
+Provide `CHAT_BETA_EXTERNAL_ATTESTATION` as the path to a private JSON file
+that names the exact release commit, SHA-256 fingerprints of the independent
+pentest and legal documents, their dated named approvers and explicit
+`decision: approved`. The pentest section must include
+`critical_open: 0` and `high_open: 0`. Format:
+
+```json
+{
+  "schema": "chat-beta-attestation-v1",
+  "release_commit": "<40-digit release SHA>",
+  "pentest": {
+    "sha256": "<actual SHA256>", "decision": "approved",
+    "approved_by": "<independent security firm>", "approved_at": "<ISO 8601 UTC>",
+    "critical_open": 0, "high_open": 0
+  },
+  "legal": {
+    "sha256": "<actual SHA256>", "decision": "approved",
+    "approved_by": "<responsible legal reviewer>", "approved_at": "<ISO 8601 UTC>"
+  }
+}
+```
+
+The automated gate checks document hashes, current commit, reviewer fields,
+explicit outcomes and review recency. **It cannot verify cryptographic
+signatures, independence, or the substantive accuracy of a report**; the
+actual independent reviews and owner sign-off are still non-negotiable.
