@@ -176,25 +176,31 @@ export function ChatsClient() {
   }
 
   useEffect(() => {
+    let mounted = true;
     void getCurrentSession()
-        .then(async (session) => {
-          if (!session) {
-            window.location.replace('/login');
-            return;
-          }
-          const items = await listChats();
-          accountRef.current = session.user_id;
-          setUserId(session.user_id);
-          setChats(items);
-          const requested = new URLSearchParams(window.location.search).get('chat');
-          if (requested) {
-            const match = items.find((item) => item.chat_id === requested);
-            if (match) setSelected(match);
-          }
-          void flushOutbox();
-        })
-        .catch(() => setError('Не удалось загрузить чаты'))
-        .finally(() => setLoading(false));
+      .then(async (session) => {
+        if (!mounted) return;
+        if (!session) {
+          window.location.replace('/login');
+          return;
+        }
+        // Establish account ownership BEFORE fetching chats. A transient
+        // list failure must not leave the user in an uninitialized shell.
+        accountRef.current = session.user_id;
+        setUserId(session.user_id);
+        void flushOutbox();
+        const items = await listChats();
+        if (!mounted || accountRef.current !== session.user_id) return;
+        setChats(items);
+        const requested = new URLSearchParams(window.location.search).get('chat');
+        if (requested) {
+          const match = items.find((item) => item.chat_id === requested);
+          if (match) setSelected(match);
+        }
+      })
+      .catch(() => { if (mounted) setError('Не удалось загрузить чаты. Проверьте соединение и повторите попытку.'); })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
