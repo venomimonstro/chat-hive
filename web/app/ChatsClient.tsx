@@ -554,14 +554,15 @@ export function ChatsClient() {
       const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
       await removeOutbox(item.user_id, item.client_message_id);
       outboxRetryRef.current.delete(item.client_message_id);
-      if (selectedIdRef.current === item.chat_id) {
+      if (accountRef.current === item.user_id && selectedIdRef.current === item.chat_id) {
         setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
       }
-      await refreshChats();
+      if (accountRef.current === item.user_id) await refreshChats();
     } catch {
+      if (accountRef.current !== item.user_id) return;
       outboxRetryRef.current.set(item.client_message_id,
         nextOutboxRetry(outboxRetryRef.current.get(item.client_message_id), Date.now()));
-      if (selectedIdRef.current === item.chat_id) {
+      if (accountRef.current === item.user_id && selectedIdRef.current === item.chat_id) {
         setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'failed' } : message));
       }
     } finally {
@@ -577,10 +578,14 @@ export function ChatsClient() {
 
     if (editing) {
       try {
+        const originalChat = selected.chat_id;
+        const originalOwner = accountRef.current;
         const updated = await editChatMessage(editing.id, text);
-        setMessages((current) => current.map((item) => item.id === updated.id ? updated : item));
-        setDraft('');
-        setEditing(null);
+        if (selectedIdRef.current === originalChat && accountRef.current === originalOwner) {
+          setMessages((current) => current.map((item) => item.id === updated.id ? updated : item));
+          setDraft('');
+          setEditing(null);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Не удалось изменить сообщение');
       }
@@ -598,13 +603,17 @@ export function ChatsClient() {
     try {
       await enqueueOutbox(item);
     } catch {
-      setError('Не удалось сохранить сообщение. Проверьте свободное место и очередь неотправленных сообщений.');
+      if (accountRef.current === item.user_id && selectedIdRef.current === item.chat_id) {
+        setError('Не удалось сохранить сообщение. Проверьте свободное место и очередь неотправленных сообщений.');
+      }
       return;
     }
-    setDraft('');
-    draftsRef.current.delete(item.chat_id);
-    setReplyingTo(null);
-    shouldStickToBottomRef.current = true;
+    if (accountRef.current === item.user_id && selectedIdRef.current === item.chat_id) {
+      setDraft('');
+      draftsRef.current.delete(item.chat_id);
+      setReplyingTo(null);
+      shouldStickToBottomRef.current = true;
+    }
     if (selectedIdRef.current === item.chat_id) {
       setMessages((current) => [...current, asLocalMessage(item, userId)]);
     }
@@ -634,7 +643,10 @@ export function ChatsClient() {
   async function removeMessage(message: LocalMessage) {
     if (message.local_status || message.sender_id !== userId) return;
     try {
+      const originalChat = selected?.chat_id;
+      const originalOwner = accountRef.current;
       await deleteChatMessage(message.id);
+      if (selectedIdRef.current !== originalChat || accountRef.current !== originalOwner) return;
       setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: '', deleted_at: new Date().toISOString() } : item));
       if (editing?.id === message.id) {
         setEditing(null);
