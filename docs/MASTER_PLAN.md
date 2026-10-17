@@ -334,6 +334,34 @@ network-enabled machine are still required before deployment.**
   validate real npm dependency locks on a machine with registry access.
   The lockfile must still be committed and a full release gate passed.
 
+## October 17 continuation — source changes vs acceptance
+
+**Code committed directly to main (no CI/Actions)**
+
+- **Sprint 27 / backup integrity:** `910e1e3` fixes SHA-256 files referring to
+  renamed staging directories and makes timestamp collisions fail rather than
+  replacing data. Added an offline smoke test to the manual release gate.
+  `a689cd1` blocks accidental restoration into the configured live
+  database and destructive media restoration through symlinked ancestors.
+- **Sprint 26 / auth resilience:** `08440cc` preserves refresh credentials on
+  transient datastore errors; `2c403b0` returns a retryable 503 for
+  authentication infrastructure outages without treating them as user logout.
+  Tests cover invalid tokens separately from temporary backend failures.
+- **Sprint 26 / subscription safety:** `c7f0b45` rejects push subscription
+  URLs aimed at localhost, IP literals, internal hostnames and unsafe ports;
+  delivery workers must still validate resolved destinations at send time.
+- **Sprint 26–28 / dependency security:** `385aea3` upgrades Next.js from
+  unpatched 15.2.4 to maintenance LTS 15.5.28; `1821285` aligns React and
+  react-dom to 19.3.1 and constrains sharp to ^0.35.5. The manual release
+  gate now checks minimum patched versions and audits production packages.
+  Relevant advisory: https://nextjs.org/blog/nextjs-security-update-october-14-2026
+
+**Evidence not yet available:** successful production Next.js build, genuine
+npm lockfile checked into source control, Go race tests, load profiles against
+the live Alpha host, isolated restore using a real backup, independent pentest,
+real-device Passkeys, measured Alpha cohort and legal/operational sign-off.
+No Sprint 25–30 has been reclassified DONE by source-only changes.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.

@@ -37,6 +37,7 @@ func TestRefreshOutageRetainsBrowserCookie(t *testing.T) {
 }
 
 type unavailableAccessStore struct{ *fakeStore }
+
 func (s *unavailableAccessStore) FindSessionByAccessTokenHash(_ context.Context, _ []byte, _ time.Time) (AuthenticatedSession, error) {
 	return AuthenticatedSession{}, errors.New("database unavailable")
 }
