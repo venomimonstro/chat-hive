@@ -16,6 +16,7 @@ import {
 } from '../lib/outbox';
 import type { RealtimeEvent } from '../lib/realtime';
 import { reconcileTimeline } from '../lib/messageTimeline';
+import { nextOutboxRetry, readyForOutboxRetry, RetryState } from '../lib/outboxRetry';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 type GroupRole = 'owner' | 'admin' | 'member' | null;
@@ -79,6 +80,7 @@ export function ChatsClient() {
   const flushingRef = useRef(false);
   const realtimeConnectedRef = useRef(false);
   const sendingIdsRef = useRef(new Set<string>());
+  const outboxRetryRef = useRef(new Map<string, RetryState>());
   const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
 
@@ -153,10 +155,12 @@ export function ChatsClient() {
       for (const item of items) {
         if (item.user_id !== accountRef.current) break;
         if (sendingIdsRef.current.has(item.client_message_id)) continue;
+        if (!readyForOutboxRetry(outboxRetryRef.current.get(item.client_message_id), Date.now())) continue;
         sendingIdsRef.current.add(item.client_message_id);
         try {
           const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
           await removeOutbox(item.user_id, item.client_message_id);
+          outboxRetryRef.current.delete(item.client_message_id);
           delivered++;
           if (selectedIdRef.current === item.chat_id) {
             setMessages((current) => [
@@ -165,10 +169,17 @@ export function ChatsClient() {
             ].sort((a, b) => a.sequence - b.sequence));
           }
         } catch {
-          // Keep failed item in IndexedDB for a later retry.
+          // Retain durable data, but avoid hammering a degraded API.
+          outboxRetryRef.current.set(item.client_message_id,
+            nextOutboxRetry(outboxRetryRef.current.get(item.client_message_id), Date.now()));
         } finally {
           sendingIdsRef.current.delete(item.client_message_id);
         }
+      }
+      // Bound ephemeral retry metadata to messages that remain durably queued.
+      const pendingIDs = new Set(items.map((item) => item.client_message_id));
+      for (const key of outboxRetryRef.current.keys()) {
+        if (!pendingIDs.has(key)) outboxRetryRef.current.delete(key);
       }
       if (delivered > 0) await refreshChats();
     } catch {
@@ -362,17 +373,21 @@ export function ChatsClient() {
   async function deliver(item: OutboxItem) {
     if (!accountRef.current || item.user_id !== accountRef.current || sendingIdsRef.current.has(item.client_message_id)) return;
     sendingIdsRef.current.add(item.client_message_id);
+    outboxRetryRef.current.delete(item.client_message_id); // Explicit user sends/retries bypass backoff.
     setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'sending' } : message));
     try {
       const session = await getCurrentSession();
       if (!session || session.user_id !== item.user_id) throw new Error('Account changed');
       const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
       await removeOutbox(item.user_id, item.client_message_id);
+      outboxRetryRef.current.delete(item.client_message_id);
       if (selectedIdRef.current === item.chat_id) {
         setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
       }
       await refreshChats();
     } catch {
+      outboxRetryRef.current.set(item.client_message_id,
+        nextOutboxRetry(outboxRetryRef.current.get(item.client_message_id), Date.now()));
       if (selectedIdRef.current === item.chat_id) {
         setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'failed' } : message));
       }
