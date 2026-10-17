@@ -386,6 +386,31 @@ The release remains blocked until a genuine npm lockfile is committed, the
 Go/Next.js checks and clean migrations pass, real WebSocket capacity and DR
 evidence is collected, and the remaining external gates are signed off.
 
+## October 17 continuation — measurable gates and backup schedule
+
+All changes below are source-level, committed directly to `main`:
+
+- **Sprint 28**: `443f169` removes duplicate pages after concurrent
+  pagination and prevents late reaction fetches from a previous chat from
+  modifying the current conversation.
+- **Sprint 27**: `8b608e6` adds an explicitly installed systemd daily backup
+  timer and checks the promoted backup before reporting success. Installation
+  on the owner's actual server, off-site copies, alerting and restore evidence
+  remain mandatory.
+- **Sprint 25**: `d648ff8` adds optional maximum p95 duration criteria for
+  health, message writes, websocket connects, and reconnect tests. Set
+  `CHAT_ALPHA_HEALTH_MAX_P95`, `CHAT_ALPHA_MESSAGE_MAX_P95`,
+  `CHAT_ALPHA_WS_MAX_P95` and `CHAT_ALPHA_RECONNECT_MAX_P95`
+  to agreed Go duration values such as `800ms` or `3s`. Their default
+  `0s` means record latency without an arbitrary unapproved SLO;
+  real measurements must establish acceptable values.
+
+**Remaining open sprints: 25, 26, 27, 28, 29, 30 (six).**
+No completion flag changes until corresponding host/device/cohort/external
+acceptance evidence is recorded. Frontend lockfile and full build, production
+load and restore drill, independent pentest and manual Beta sign-off remain
+release blockers.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
