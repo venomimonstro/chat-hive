@@ -284,10 +284,24 @@ export function ChatsClient() {
         void syncLatest(selected.chat_id);
       }
     }, 5000);
+    // Resume immediately after a sleeping tab, network recovery or a fresh
+    // realtime handshake. The server remains authoritative for missed events.
+    const resync = () => {
+      if (active && document.visibilityState === 'visible') void syncLatest(selected.chat_id);
+    };
+    const onConnection = (event: Event) => {
+      if ((event as CustomEvent<boolean>).detail === true) resync();
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('online', resync);
+    window.addEventListener('chat:connection', onConnection);
 
     return () => {
       active = false;
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('online', resync);
+      window.removeEventListener('chat:connection', onConnection);
     };
   }, [selected?.chat_id, userId]);
 
