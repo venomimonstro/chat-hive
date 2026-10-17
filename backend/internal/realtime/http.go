@@ -15,6 +15,12 @@ import (
 	"github.com/venomimonstro/chat-hive/backend/internal/identity"
 )
 
+// A realtime ticket authenticates an upgrade, not an unlimited lifetime.
+// Force fresh authentication regularly so revoked or expired browser sessions
+// cannot retain a WebSocket forever (a dedicated session-revocation feed
+// would be preferable for immediate server-side disconnects).
+const maxRealtimeConnectionAge = 5 * time.Minute
+
 type HTTPHandler struct {
 	guard         *authhttp.Guard
 	hub           *Hub
@@ -91,9 +97,9 @@ func (h *HTTPHandler) connect(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	conn.SetReadLimit(4 << 10)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	client := &Client{UserID: userID, Send: make(chan Event, 64)}
+    ctx, cancel := context.WithTimeout(context.Background(),maxRealtimeConnectionAge)
+    defer cancel()
+    client := &Client{UserID:userID,Send:make(chan Event,64)}
 	h.hub.Register(client)
 	connectedAt := time.Now()
 	h.logger.Info("realtime_connected", "connections", h.hub.Metrics().Connections)
