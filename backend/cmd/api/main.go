@@ -133,34 +133,44 @@ func main() {
     realtimeListener.SetCoreOnly(coreLaunch)
     go realtimeListener.Run(runtimeCtx)
 
-	mediaFiles, err := media.NewFileStorageFromEnv()
-	if err != nil { logger.Error("media storage configuration failed", "error", err); os.Exit(1) }
-	mediaHTTP := media.NewHTTPHandler(media.NewService(media.NewPostgresStore(pool), mediaFiles), identityService, logger)
-
-	app := httpserver.New(logger)
+    app := httpserver.New(logger)
     app.SetCoreLaunch(coreLaunch)
-	app.Register(identityHTTP.Register)
-	app.Register(accountDataHTTP.Register)
+    // These routes are the whole first-release public product. Keep them
+    // registered even if optional future integrations are misconfigured.
+    app.Register(identityHTTP.Register)
+    app.Register(accountDataHTTP.Register)
     app.Register(preferencesHTTP.Register)
-	app.Register(onboardingHTTP.Register)
-	app.Register(socialHTTP.Register)
-	app.Register(growthHTTP.Register)
-	app.Register(messagingHTTP.Register)
-	app.Register(reactionBatchHTTP.Register)
-	app.Register(groupsHTTP.Register)
-	app.Register(groupModerationHTTP.Register)
-	app.Register(invitePreviewHTTP.Register)
-	app.Register(postsHTTP.Register)
-	app.Register(feedHTTP.Register)
-	app.Register(searchHTTP.Register)
-	app.Register(requestHTTP.Register)
-	app.Register(moderationHTTP.Register)
-	app.Register(adminHTTP.Register)
-	app.Register(communityHTTP.Register)
-	app.Register(channelHTTP.Register)
-	app.Register(notificationHTTP.Register)
-	app.Register(realtimeHTTP.Register)
-	app.Register(mediaHTTP.Register)
+    app.Register(onboardingHTTP.Register)
+    app.Register(socialHTTP.Register) // Contact block/unblock; core route gate hides the social graph.
+    app.Register(growthHTTP.Register)
+    app.Register(messagingHTTP.Register)
+    app.Register(requestHTTP.Register)
+    app.Register(adminHTTP.Register) // Privileged operational oversight.
+    app.Register(realtimeHTTP.Register)
+    if !coreLaunch {
+        // Future capabilities are not merely hidden by CSS; their HTTP
+        // handlers are not registered at all in core mode.
+        app.Register(reactionBatchHTTP.Register)
+        app.Register(groupsHTTP.Register)
+        app.Register(groupModerationHTTP.Register)
+        app.Register(invitePreviewHTTP.Register)
+        app.Register(postsHTTP.Register)
+        app.Register(feedHTTP.Register)
+        app.Register(searchHTTP.Register)
+        app.Register(moderationHTTP.Register)
+        app.Register(communityHTTP.Register)
+        app.Register(channelHTTP.Register)
+        app.Register(notificationHTTP.Register)
+        mediaFiles, mediaErr := media.NewFileStorageFromEnv()
+        if mediaErr != nil {
+            logger.Error("media storage configuration failed", "error", mediaErr)
+            os.Exit(1)
+        }
+        mediaHTTP := media.NewHTTPHandler(
+            media.NewService(media.NewPostgresStore(pool), mediaFiles),
+            identityService, logger)
+        app.Register(mediaHTTP.Register)
+    }
 	app.SetReadiness(pool.Ping)
 	app.SetAllowedOrigin(cfg.WebOrigin)
 	app.SetSecurityEventSink(securityevents.NewPostgresStore(pool))
