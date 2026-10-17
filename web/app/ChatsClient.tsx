@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Avatar, Badge, Button, IconButton, SearchField } from '../components/ui';
 import {
@@ -18,6 +18,8 @@ import { useLanguage, type Language } from '../lib/language';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 const PAGE_SIZE = 50;
+const HISTORY_CACHE_LIMIT = 8;
+type CachedHistory = { messages: LocalMessage[]; hasOlder: boolean };
 
 function chatName(chat: ChatSummary) {
   return chat.kind === 'direct' ? (chat.peer_display_name || chat.peer_username || 'Диалог') : (chat.title || 'Группа');
@@ -78,32 +80,50 @@ export function ChatsClient() {
   const outboxRetryRef = useRef(new Map<string, RetryState>());
   const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
+  const historyCacheRef = useRef(new Map<string, CachedHistory>());
+  const draftsRef = useRef(new Map<string,string>());
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const lastScrolledChatRef = useRef('');
+  const olderScrollAnchorRef = useRef<{ chatID: string; height: number; top: number } | null>(null);
+  const lastFetchErrorRef = useRef('');
+
 
   function chooseChat(chat: ChatSummary | null) {
     // React effects run after render. Update the guard synchronously so
     // responses from the previous conversation cannot mutate the new view.
-    selectedIdRef.current = chat?.chat_id ?? '';
-    setMessages([]);
-    setHasOlder(false);
+    const oldID = selectedIdRef.current;
+    if (oldID) draftsRef.current.set(oldID, draft);
+    const newID = chat?.chat_id ?? '';
+    selectedIdRef.current = newID;
+    olderScrollAnchorRef.current = null;
+    shouldStickToBottomRef.current = true;
+    lastScrolledChatRef.current = '';
+    const cached = newID ? historyCacheRef.current.get(newID) : undefined;
+    setMessages(cached?.messages ?? []);
+    setHasOlder(cached?.hasOlder ?? false);
     setOlderLoading(false);
-    setMessageLoading(Boolean(chat));
+    setMessageLoading(Boolean(chat) && !cached);
     setSelected(chat);
     setReplyingTo(null);
     setEditing(null);
-    setDraft('');
-    replaceChatQuery(chat?.chat_id);
+    setDraft(draftsRef.current.get(newID) ?? '');
+    setError('');
+    replaceChatQuery(newID);
   }
 
   async function refreshChats() {
     try {
       const items = await listChats();
+      lastFetchErrorRef.current = '';
       setChats(items);
       if (selectedIdRef.current) {
         const fresh = items.find((item) => item.chat_id === selectedIdRef.current);
         if (fresh) setSelected(fresh);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить чаты');
+      const message = err instanceof Error ? err.message : 'Не удалось загрузить чаты';
+      if (lastFetchErrorRef.current !== message) { setError(message); lastFetchErrorRef.current = message; }
     }
   }
 
@@ -129,9 +149,12 @@ export function ChatsClient() {
     if (!accountRef.current || flushingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
     flushingRef.current = true;
     try {
+      // Reading an empty IndexedDB outbox should not trigger auth/session
+      // requests every few seconds on slow or metered connections.
+      const items = await listOutbox(accountRef.current);
+      if (items.length === 0) return;
       const session = await getCurrentSession();
       if (!session || session.user_id !== accountRef.current) return;
-      const items = await listOutbox(session.user_id);
       let delivered = 0;
       for (const item of items) {
         if (item.user_id !== accountRef.current) break;
@@ -181,6 +204,10 @@ export function ChatsClient() {
         }
         // Establish account ownership BEFORE fetching chats. A transient
         // list failure must not leave the user in an uninitialized shell.
+        if (accountRef.current !== session.user_id) {
+          historyCacheRef.current.clear();
+          draftsRef.current.clear();
+        }
         accountRef.current = session.user_id;
         setUserId(session.user_id);
         void flushOutbox();
@@ -216,10 +243,10 @@ export function ChatsClient() {
       if (document.visibilityState !== 'visible') return;
       void flushOutbox();
       if (!realtimeConnectedRef.current) void refreshChats();
-    }, 5000);
+    }, 15000);
     const reconcile = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshChats();
-    }, 30000);
+    }, 60000);
     return () => {
       window.removeEventListener('chat:connection', onConnection);
       window.removeEventListener('online', onForeground);
@@ -250,12 +277,13 @@ export function ChatsClient() {
     }
 
     let active = true;
-    setMessages([]);
-    setHasOlder(false);
-    setMessageLoading(true);
+    const cached = historyCacheRef.current.get(selected.chat_id);
+    setMessages(cached?.messages ?? []);
+    setHasOlder(cached?.hasOlder ?? false);
+    setMessageLoading(!cached);
     Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(accountRef.current, selected.chat_id)])
       .then(async ([items, queued]) => {
-        if (!active) return;
+        if (!active || selectedIdRef.current !== selected.chat_id) return;
         const ordered = [...items].reverse();
         setHasOlder(items.length === PAGE_SIZE);
         setMessages((current) => reconcileTimeline(current, items, queued, userId, selected.chat_id));
@@ -269,12 +297,12 @@ export function ChatsClient() {
     let elapsed = 0;
     const timer = window.setInterval(() => {
       if (!active || document.visibilityState !== 'visible') return;
-      elapsed += 5;
-      if (!realtimeConnectedRef.current || elapsed >= 30) {
+      elapsed += 10;
+      if (!realtimeConnectedRef.current || elapsed >= 60) {
         elapsed = 0;
         void syncLatest(selected.chat_id);
       }
-    }, 5000);
+    }, 10000);
     // Resume immediately after a sleeping tab, network recovery or a fresh
     // realtime handshake. The server remains authoritative for missed events.
     const resync = () => {
@@ -296,6 +324,37 @@ export function ChatsClient() {
     };
   }, [selected?.chat_id, userId]);
 
+  // Cap private in-memory snapshots; never put chats in localStorage,
+  // CacheStorage, shared service-worker caches, or sessionStorage.
+  useEffect(() => {
+    if (!selected?.chat_id) return;
+    const key = selected.chat_id;
+    historyCacheRef.current.delete(key);
+    historyCacheRef.current.set(key, { messages, hasOlder });
+    while (historyCacheRef.current.size > HISTORY_CACHE_LIMIT) {
+      const oldest = historyCacheRef.current.keys().next().value;
+      if (oldest === undefined) break;
+      historyCacheRef.current.delete(oldest);
+    }
+  }, [selected?.chat_id, messages, hasOlder]);
+
+  useLayoutEffect(() => {
+    const pane = messageListRef.current;
+    if (!pane || !selected?.chat_id) return;
+    const anchor = olderScrollAnchorRef.current;
+    if (anchor && anchor.chatID === selected.chat_id) {
+      pane.scrollTop = anchor.top + (pane.scrollHeight - anchor.height);
+      olderScrollAnchorRef.current = null;
+      return;
+    }
+    if (lastScrolledChatRef.current !== selected.chat_id) {
+      pane.scrollTop = pane.scrollHeight;
+      lastScrolledChatRef.current = selected.chat_id;
+      return;
+    }
+    if (shouldStickToBottomRef.current) pane.scrollTop = pane.scrollHeight;
+  }, [selected?.chat_id, messages]);
+
   const filteredChats = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return chats.filter((chat) => chat.kind === 'direct');
@@ -309,6 +368,10 @@ export function ChatsClient() {
     const first = messages.find((item) => Number.isFinite(item.sequence) && item.sequence < Number.MAX_SAFE_INTEGER);
     if (!first) return;
     setOlderLoading(true);
+    const pane = messageListRef.current;
+    if (pane) olderScrollAnchorRef.current = {
+      chatID: selected.chat_id, height: pane.scrollHeight, top: pane.scrollTop
+    };
     try {
       const items = await listMessages(selected.chat_id, first.sequence, PAGE_SIZE);
       if (selectedIdRef.current !== selected.chat_id) return;
@@ -319,6 +382,7 @@ export function ChatsClient() {
       setHasOlder(items.length === PAGE_SIZE);
       // Reactions belong to a later release.
     } catch (err) {
+      olderScrollAnchorRef.current = null;
       if (selectedIdRef.current !== selected.chat_id) return;
       setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
     } finally {
@@ -401,7 +465,9 @@ export function ChatsClient() {
       return;
     }
     setDraft('');
+    draftsRef.current.delete(item.chat_id);
     setReplyingTo(null);
+    shouldStickToBottomRef.current = true;
     if (selectedIdRef.current === item.chat_id) {
       setMessages((current) => [...current, asLocalMessage(item, userId)]);
     }
@@ -492,7 +558,11 @@ export function ChatsClient() {
                 <Avatar name={chatName(selected)} size="sm" />
                 <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : null}</div>
               </header>
-              <div className="messageList" aria-live="polite">
+              {error ? <div className="conversationError" role="alert">{error}</div> : null}
+              <div className="messageList" ref={messageListRef} role="log" aria-label={t.message} aria-relevant="additions" onScroll={(event) => {
+                const pane = event.currentTarget;
+                shouldStickToBottomRef.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120;
+              }}>
                 {hasOlder ? <button className="loadOlderButton" type="button" onClick={loadOlder} disabled={olderLoading}>{olderLoading ? t.loading : t.older}</button> : null}
                 {messageLoading ? <div className="chatListState">{t.loadingHistory}</div> : null}
                 {messages.map((message) => {
@@ -501,7 +571,7 @@ export function ChatsClient() {
                   return (
                     <div className={`messageRow ${mine ? 'isMine' : ''}`} key={message.client_message_id}>
                       <div className={`messageBubble ${message.local_status === 'failed' ? 'isFailed' : ''}`}>
-                        {replied ? <button className="messageReplyPreview" type="button" onClick={() => document.getElementById(`message-${replied.id}`)?.scrollIntoView({ block: 'center' })}>{replied.body || 'Сообщение удалено'}</button> : null}
+                        {replied ? <button className="messageReplyPreview" type="button" onClick={() => document.getElementById(`message-${replied.id}`)?.scrollIntoView({ block: 'center' })}>{replied.body || t.removed}</button> : null}
                         <p id={`message-${message.id}`}>{message.deleted_at ? t.removed : message.body}</p>
                         <div className="messageMeta">
                           <time>{formatTime(message.created_at, language)}</time>
@@ -529,7 +599,11 @@ export function ChatsClient() {
               ) : null}
               <form className="messageComposer" onSubmit={send}>
                 
-                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} maxLength={4096} placeholder={editing ? t.edit : t.message} aria-label={t.message} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+                <textarea value={draft} onChange={(e) => {
+                  const next = e.target.value;
+                  setDraft(next);
+                  if (selectedIdRef.current) draftsRef.current.set(selectedIdRef.current, next);
+                }} rows={1} maxLength={4096} placeholder={editing ? t.edit : t.message} aria-label={t.message} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
                 <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label={editing ? t.save : t.send}>{editing ? '✓' : '↑'}</button>
               </form>
             </>
