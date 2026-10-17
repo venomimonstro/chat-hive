@@ -88,6 +88,27 @@ function applyLanguage(lang: Language) {
   window.dispatchEvent(new CustomEvent<Language>(EVENT, { detail: lang }));
 }
 
+let accountLanguagePromise: Promise<Language> | null = null;
+let accountLanguageUser = '';
+let accountLanguageExpires = 0;
+
+function loadAccountLanguage(userID: string): Promise<Language> {
+  if (accountLanguagePromise && accountLanguageUser === userID && Date.now() < accountLanguageExpires) {
+    return accountLanguagePromise;
+  }
+  accountLanguageUser = userID;
+  accountLanguageExpires = Date.now() + 60_000;
+  const pending = getLanguagePreference();
+  accountLanguagePromise = pending;
+  void pending.catch(() => {
+    if (accountLanguagePromise === pending) {
+      accountLanguagePromise = null;
+      accountLanguageExpires = 0;
+    }
+  });
+  return pending;
+}
+
 export function useLanguage() {
   const [language, setLanguage] = useState<Language>('ru');
   useEffect(() => {
@@ -102,7 +123,7 @@ export function useLanguage() {
         // Restore them through the HttpOnly cookie before reading preferences.
         const session = await getCurrentSession();
         if (!active || thisRevision !== revision || !session) return;
-        const fromAccount = await getLanguagePreference();
+        const fromAccount = await loadAccountLanguage(session.user_id);
         if (active && thisRevision === revision) {
           applyLanguage(fromAccount);
           setLanguage(fromAccount);
@@ -127,6 +148,9 @@ export function useLanguage() {
     if (session) {
       // Do not claim the account changed if the API write failed.
       await saveLanguagePreference(next);
+      accountLanguageUser = session.user_id;
+      accountLanguageExpires = Date.now() + 60_000;
+      accountLanguagePromise = Promise.resolve(next);
     }
     applyLanguage(next);
     setLanguage(next);
