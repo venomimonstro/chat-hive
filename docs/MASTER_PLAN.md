@@ -543,6 +543,23 @@ real two-user smoke before making commercial access public.
 Go/Next checks, actual Alpha load/recovery evidence and legal/security
 approval. Do not mark sprints 25–30 fully accepted without this evidence.
 
+## October 17 — UX/speed/adversarial security hardening
+
+See `docs/UX_SECURITY_FINAL_PASS.md` for the screen-by-screen acceptance
+matrix, weak-network budget and OWASP-aligned attack simulations.
+
+Implemented in main: memory-only chat snapshots/drafts and logout clearing,
+optimized chat refresh/session/language requests, adaptive slow-network
+pagination, route-level CSS splitting, accessible message actions and skeletons;
+disabled future social routes and PWA Push; exact Origin and max lifetime for
+WebSocket; fail-closed operational feature flags; staging-only negative attack
+probe integrated into `ops/core/gate.sh`.
+
+**Do not mark 25–30 DONE:** frontend lockfile missing; full production build,
+Go race tests, staging load, independent pentest, live backup drill, mobile
+visual audit, XSS/CSP hardening and immediate server-side WS session revocation
+are still unverified/unfinished. Commercial readiness: NO-GO.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
