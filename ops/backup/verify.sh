@@ -14,7 +14,11 @@ pg_restore --list postgres.dump >/dev/null
 
 if [ -f media.tar.gz ]; then
   sha256sum -c media.tar.gz.sha256
-  tar -tzf media.tar.gz >/dev/null
+  grep -qx 'media=media.tar.gz' manifest.txt || { echo 'manifest/media mismatch' >&2; exit 1; }
+  command -v python3 >/dev/null 2>&1 || { echo 'Python3 is required for safe media verification' >&2; exit 2; }
+  python3 "$(dirname -- "$0")/check_media_archive.py" media.tar.gz
+else
+  grep -qx 'media=none' manifest.txt || { echo 'manifest requires missing media' >&2; exit 1; }
 fi
 
 printf '%s\n' "Backup integrity verified: $BACKUP_PATH"

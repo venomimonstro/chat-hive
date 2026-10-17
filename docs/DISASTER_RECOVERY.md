@@ -35,6 +35,14 @@ sh ops/backup/verify.sh ./backups/<timestamp>
 
 Verification checks the manifest, PostgreSQL custom archive and media tarball when present.
 
+Media archive verification rejects traversal paths, symlinks, hardlinks,
+device entries, duplicate paths and expanded size above 200 GiB by default
+(adjust `CHAT_DR_MAX_MEDIA_BYTES` for larger installations).
+Python 3 is required. The isolated restore drill also extracts media into a
+temporary directory and includes extraction in reported `rto_seconds`.
+Production restoration refuses absolute filesystem/system roots and requires
+a dedicated absolute, non-symlink media directory.
+
 ## Restore drill
 
 Preferred automated drill:

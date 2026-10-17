@@ -13,6 +13,8 @@ command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 2; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 2; }
 
 BACKUP_PATH="$(CDPATH= cd -- "$BACKUP_PATH" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+MEDIA_TMP=""
 NAME="chat-dr-drill-$$"
 DB="chat_restore_drill"
 USER="chatdrill"
@@ -21,6 +23,7 @@ STARTED="$(date +%s)"
 
 cleanup() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
+  if [ -n "$MEDIA_TMP" ]; then rm -rf -- "$MEDIA_TMP"; fi
 }
 trap cleanup EXIT INT TERM
 
@@ -31,7 +34,11 @@ echo "[drill] verifying backup checksums"
   sha256sum -c postgres.dump.sha256
   if [ -f media.tar.gz ]; then
     sha256sum -c media.tar.gz.sha256
-    tar -tzf media.tar.gz >/dev/null
+    grep -qx 'media=media.tar.gz' manifest.txt
+    command -v python3 >/dev/null 2>&1 || { echo 'Python3 is required for media verification' >&2; exit 2; }
+    python3 "$SCRIPT_DIR/check_media_archive.py" media.tar.gz
+  else
+    grep -qx 'media=none' manifest.txt
   fi
 )
 
@@ -57,6 +64,13 @@ for table in users sessions chats messages security_events; do
   [ "$exists" = "t" ] || { echo "required table missing after restore: $table" >&2; exit 1; }
 done
 
+MEDIA_FILES="not_in_backup"
+if [ -f "$BACKUP_PATH/media.tar.gz" ]; then
+  echo "[drill] validating real media extraction in isolation"
+  MEDIA_TMP="$(mktemp -d)"
+  tar --no-same-owner --no-same-permissions -xzf "$BACKUP_PATH/media.tar.gz" -C "$MEDIA_TMP"
+  MEDIA_FILES="$(find "$MEDIA_TMP" -type f | wc -l | tr -d ' ')"
+fi
 FINISHED="$(date +%s)"
 RTO=$((FINISHED - STARTED))
-echo "[drill] PASS tables=$TABLES rto_seconds=$RTO image=$IMAGE"
+echo "[drill] PASS tables=$TABLES media_files=$MEDIA_FILES rto_seconds=$RTO image=$IMAGE"
