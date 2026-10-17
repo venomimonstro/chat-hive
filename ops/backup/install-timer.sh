@@ -19,6 +19,23 @@ done
 [[ "$(stat -c '%a' "$ENV_FILE")" =~ ^(600|400)$ ]] || {
   echo "Backup env file must have mode 0600 or 0400" >&2; exit 2;
 }
+# This timer executes a repository script as root. Refuse a checkout or
+# credential file controlled by another OS account (and writable parents).
+[[ "$(stat -c '%u' "$ENV_FILE")" == "0" ]] || {
+  echo "Backup env file must be owned by root" >&2; exit 2;
+}
+for executable in "$ROOT" "$ROOT/ops" "$ROOT/ops/backup" "$ROOT/ops/backup/backup.sh" "$ROOT/ops/backup/verify.sh"; do
+  [[ -e "$executable" && ! -L "$executable" ]] || {
+    echo "Backup executable path is missing or a symlink: $executable" >&2; exit 2;
+  }
+  [[ "$(stat -c '%u' "$executable")" == "0" ]] || {
+    echo "Root-run backup checkout must be root-owned: $executable" >&2; exit 2;
+  }
+  permission="$(stat -c '%a' "$executable")"
+  (( (8#$permission & 8#22) == 0 )) || {
+    echo "Root-run backup checkout must not be group/world writable: $executable" >&2; exit 2;
+  }
+done
 grep -q '^DATABASE_URL=' "$ENV_FILE" || { echo "DATABASE_URL is required in $ENV_FILE" >&2; exit 2; }
 grep -q '^CHAT_BACKUP_DIR=/' "$ENV_FILE" || { echo "CHAT_BACKUP_DIR must be absolute in $ENV_FILE" >&2; exit 2; }
 

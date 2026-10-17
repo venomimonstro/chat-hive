@@ -44,6 +44,13 @@ sudo systemctl status chat-hive-backup.service
 systemctl list-timers --all chat-hive-backup.timer
 ```
 
+Because the installed systemd service runs the backup script as root, the
+installer refuses non-root-owned or group/world-writable project script paths,
+and refuses non-root-owned credential files. Use a root-owned read-only
+deployment checkout for the timer (or implement a dedicated non-root
+backup service account with the necessary PostgreSQL/media permissions);
+never point this service at a user-writable checkout.
+
 The timer runs daily at 02:00 UTC with up to 15 minutes of jitter and
 catches up missed events after reboot. The backup script now validates the
 **promoted** artifact before declaring success. Failed jobs remain visible in
