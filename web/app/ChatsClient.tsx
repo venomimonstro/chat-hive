@@ -16,6 +16,7 @@ import { reconcileTimeline } from '../lib/messageTimeline';
 import { nextOutboxRetry, readyForOutboxRetry, RetryState } from '../lib/outboxRetry';
 import { useLanguage, type Language } from '../lib/language';
 import { currentMessagePageSize } from '../lib/networkBudget';
+import { scopedChatMessages, canCacheChatMessages } from '../lib/chatIsolation';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 // Adaptive limits reduce initial JSON cost on slow connections.
@@ -442,8 +443,8 @@ export function ChatsClient() {
     // React effects see state from the previous render when the selected
     // chat changes. Never store another chat's history under this key.
     // A zero-message initial state must not overwrite a valid cached page.
-    const scoped = messages.filter((item) => item.chat_id === key);
-    if (scoped.length !== messages.length) return;
+    if (!canCacheChatMessages(messages, key)) return;
+    const scoped = scopedChatMessages(messages, key);
     const previous = historyCacheRef.current.get(key);
     if (scoped.length === 0 && previous?.messages.length && messageLoading) return;
     historyCacheRef.current.delete(key);
@@ -481,7 +482,7 @@ export function ChatsClient() {
   // Never render a previous conversation's messages during React's
   // transitional render before selection effects have applied.
   const visibleMessages = useMemo(
-    () => messages.filter((item) => item.chat_id === selected?.chat_id),
+    () => scopedChatMessages(messages, selected?.chat_id),
     [messages, selected?.chat_id]
   );
   const messageByID = useMemo(() => new Map(visibleMessages.filter((item) => !item.local_status).map((item) => [item.id, item])), [visibleMessages]);

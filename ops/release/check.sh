@@ -95,7 +95,7 @@ NODE
   info "auditing production dependency vulnerabilities"
   (cd web && npm audit --omit=dev --audit-level=high)
   info "running rotating-session concurrency regressions"
-  (cd web && node --test tests/auth-refresh.test.cjs tests/message-timeline.test.cjs tests/realtime-heartbeat.test.cjs tests/push-unsubscribe.test.cjs tests/outbox-retry.test.cjs tests/core-routes.test.cjs tests/language-cache.test.cjs tests/network-budget.test.cjs tests/core-ux-contract.test.cjs)
+  (cd web && node --test tests/auth-refresh.test.cjs tests/message-timeline.test.cjs tests/realtime-heartbeat.test.cjs tests/push-unsubscribe.test.cjs tests/outbox-retry.test.cjs tests/core-routes.test.cjs tests/language-cache.test.cjs tests/network-budget.test.cjs tests/chat-isolation.test.cjs tests/core-ux-contract.test.cjs)
   info "running frontend typecheck"
   (cd web && npm run typecheck)
   info "running frontend production build"
