@@ -70,8 +70,8 @@ func TestInsecureSameHostOriginCannotBurnTicket(t *testing.T) {
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("origin %q unexpectedly accepted, status=%d", origin, response.Code)
 		}
-		if _, valid := tickets.Peek(token); !valid {
-			t.Fatalf("invalid origin %q consumed valid ticket", origin)
-		}
+	}
+	if userID, valid := tickets.Consume(token); !valid || userID != "secure-user" {
+		t.Fatalf("invalid origins consumed valid ticket; user=%q valid=%v", userID, valid)
 	}
 }
