@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"errors"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -111,6 +112,18 @@ func (s *Service) SubscribePush(ctx context.Context, input PushSubscriptionInput
 	input.UserAgent = strings.TrimSpace(input.UserAgent)
 	parsed, err := url.Parse(input.Endpoint)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || len(input.Endpoint) > 2048 || input.P256DH == "" || input.Auth == "" || len(input.P256DH) > 512 || len(input.Auth) > 512 {
+		return ErrInvalid
+	}
+	// These addresses will eventually be contacted by the Web Push sender.
+	// Reject obvious SSRF endpoints now (the sender must also resolve and
+	// validate destination IPs immediately before making network requests).
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Opaque != "" ||
+		net.ParseIP(host) != nil || !strings.Contains(host, ".") ||
+		host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") ||
+		strings.HasSuffix(host, ".localdomain") ||
+		(parsed.Port() != "" && parsed.Port() != "443") {
 		return ErrInvalid
 	}
 	if input.UserID == "" { return ErrForbidden }
