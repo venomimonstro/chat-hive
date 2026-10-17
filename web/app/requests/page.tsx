@@ -87,11 +87,7 @@ export default function RequestsPage() {
               <Avatar name={item.display_name || item.username} />
               <div><a href={`/?chat=${encodeURIComponent(item.chat_id)}`}><strong>{item.display_name || item.username}</strong></a><span>@{item.username} · {formatDate(item.created_at, language)}</span></div>
             </div>
-            <div className="requestSignals">
-              {item.shared_interests > 0 ? <span>{item.shared_interests} {tr('общих интересов')}</span> : null}
-              {item.mutual_followers > 0 ? <span>{item.mutual_followers} {tr('общих подписок')}</span> : null}
-              {!item.shared_interests && !item.mutual_followers ? <span>{tr("Новый контакт")}</span> : null}
-            </div>
+            <div className="requestSignals"><span>{tr("Новый контакт")}</span></div>
             <p className="requestMessage">{item.body || tr("Пользователь хочет начать разговор.")}</p>
             <div className="requestActions">
               <Button onClick={() => void decide(item, true)} disabled={busy === item.chat_id}>{tr("Принять")}</Button>

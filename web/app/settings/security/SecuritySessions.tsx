@@ -47,7 +47,9 @@ const securityEN: Record<string,string> = {
   "Удалить этот passkey? Вход по нему перестанет работать.": "Remove this passkey? It will no longer work for sign-in.",
   "Не удалось удалить passkey": "Could not remove passkey",
   "Не удалось скачать данные": "Could not download data",
-  "Не удалось удалить аккаунт": "Could not delete account"
+  "Не удалось удалить аккаунт": "Could not delete account",
+  "Старая сессия": "Legacy session",
+  "Браузер": "Browser"
 };
 
 
@@ -138,7 +140,7 @@ export function SecuritySessions() {
 
   async function removePasskey(passkey: PasskeyInfo) {
     if (passkeyBusy) return;
-    if (!window.confirm(tr(tr("Удалить этот passkey? Вход по нему перестанет работать.")))) return;
+    if (!window.confirm(tr("Удалить этот passkey? Вход по нему перестанет работать."))) return;
     setPasskeyBusy(passkey.credential_id);
     setError('');
     try {
@@ -200,7 +202,7 @@ export function SecuritySessions() {
               <div className="sessionIcon" aria-hidden="true">◇</div>
               <div className="sessionCopy">
                 <div className="sessionTitle"><strong>{passkey.label || 'Passkey'}</strong></div>
-                <small>{tr('Добавлен ')}{new Date(passkey.created_at).toLocaleString(locale)}{passkey.last_used_at ? ` · использован ${new Date(passkey.last_used_at).toLocaleString(locale)}` : ''}</small>
+                <small>{tr('Добавлен ')}{new Date(passkey.created_at).toLocaleString(locale)}{passkey.last_used_at ? ` · ${tr("использован ")}${new Date(passkey.last_used_at).toLocaleString(locale)}` : ''}</small>
               </div>
               <Button variant="secondary" disabled={passkeyBusy === passkey.credential_id} onClick={() => void removePasskey(passkey)}>
                 {passkeyBusy === passkey.credential_id ? tr("Удаляем…") : tr("Удалить")}
@@ -222,10 +224,10 @@ export function SecuritySessions() {
                 <div className="sessionIcon" aria-hidden="true">{isCurrent ? '●' : '○'}</div>
                 <div className="sessionCopy">
                   <div className="sessionTitle">
-                    <strong>{deviceLabel(session.user_agent)}</strong>
+                    <strong>{tr(deviceLabel(session.user_agent))}</strong>
                     {isCurrent ? <span>{tr("Текущая")}</span> : null}
                   </div>
-                  <small>{authMethodLabel(session.auth_method)} · {session.last_ip || tr("IP не определён")} · {tr('активность ')}{new Date(session.last_seen_at).toLocaleString(locale)}</small>
+                  <small>{tr(authMethodLabel(session.auth_method))} · {session.last_ip || tr("IP не определён")} · {tr('активность ')}{new Date(session.last_seen_at).toLocaleString(locale)}</small>
                   <details>
                     <summary>{tr("Подробнее")}</summary>
                     <p>{session.user_agent || tr("User-Agent не передан")}</p>
