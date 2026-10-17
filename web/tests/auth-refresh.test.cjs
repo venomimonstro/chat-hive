@@ -85,3 +85,19 @@ test('temporary server outages preserve the last access token', async () => {
   await assert.rejects(app.refreshSession(), /временно недоступен/);
   assert.equal(app.getAccessToken(), 'existing');
 });
+
+test('profile service outage never returns a null onboarding profile', async () => {
+  const app = createApp(async () => ({
+    status: 503, ok: false,
+    json: async () => ({ error: { code: 'temporarily_unavailable', message: 'Try again later' } })
+  }));
+  await assert.rejects(app.getProfile(), /Try again later/);
+});
+
+test('incomplete onboarding profile remains a valid API response', async () => {
+  const profile = { user_id: 'u', username: '', display_name: '', interests: [], bio: '', completed: false };
+  const app = createApp(async () => ({ status: 200, ok: true, json: async () => profile }));
+  const result = await app.getProfile();
+  assert.equal(result.completed, false);
+  assert.equal(result.user_id, profile.user_id);
+});

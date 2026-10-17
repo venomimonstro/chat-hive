@@ -16,10 +16,13 @@ export function OnboardingForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
     Promise.all([listInterests(), getProfile()])
       .then(([items, profile]) => {
+        if (!mounted) return;
         setInterests(items);
         if (profile?.completed) {
           router.replace(takeReturnTo('/'));
@@ -32,8 +35,14 @@ export function OnboardingForm() {
           setSelected(profile.interests ?? []);
         }
       })
-      .catch(() => setError('Не удалось загрузить данные. Обновите страницу.'))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (mounted) {
+          setError('Не удалось загрузить данные. Обновите страницу.');
+          setLoadFailed(true);
+        }
+      })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, [router]);
 
   const canSubmit = useMemo(() => {
@@ -46,7 +55,7 @@ export function OnboardingForm() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving) return;
+    if (!canSubmit || saving || loadFailed) return;
     setSaving(true);
     setError('');
     try {
@@ -66,6 +75,9 @@ export function OnboardingForm() {
 
   if (loading) {
     return <Surface className="onboardingCard"><div className="authSpinner" /><p>Подготавливаем профиль…</p></Surface>;
+  }
+  if (loadFailed) {
+    return <Surface className="onboardingCard"><div className="authError" role="alert">{error}</div><Button type="button" onClick={() => window.location.reload()}>Повторить загрузку</Button></Surface>;
   }
 
   return (

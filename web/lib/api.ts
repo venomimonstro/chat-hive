@@ -210,9 +210,12 @@ export async function listInterests(): Promise<Interest[]> {
   return payload.items;
 }
 
-export async function getProfile(): Promise<Profile | null> {
+export async function getProfile(): Promise<Profile> {
   const response = await request('/api/v1/me/profile');
-  if (!response.ok) return null;
+  // The backend returns a profile for every authenticated user, including
+  // those who have not completed onboarding. A 503 or expired session must
+  // not masquerade as a missing/empty profile and reset onboarding state.
+  if (!response.ok) throw new Error(await parseError(response));
   return response.json() as Promise<Profile>;
 }
 
