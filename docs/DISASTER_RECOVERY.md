@@ -146,3 +146,14 @@ media tree is temporarily moved aside and recovered on a failed rename.
 **This is not a distributed transaction:** in a mixed application/database
 restore, keep the restored environment isolated until a complete product
 smoke check passes; do not serve requests while promotion is in progress.
+
+### Restoring into a separate PostgreSQL database
+
+`ops/backup/restore.sh` requires `RESTORE_DATABASE_URL` and blocks targets
+matching **either** `DATABASE_URL` or the production `CHAT_DATABASE_URL`.
+It compares parsed host, port, and database name while ignoring differences in
+user/password/SSL parameters. Missing or unsupported live connection formats
+cause a fail-closed rejection; the check is not a substitute for isolating
+the restoration network/credentials. If media was backed up, explicitly set a
+**separate** `RESTORE_MEDIA_ROOT`; database-only restores require
+`CHAT_ALLOW_DATABASE_ONLY_RESTORE=1` and an intentionally isolated target.

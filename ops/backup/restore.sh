@@ -20,10 +20,19 @@ fi
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 "$SCRIPT_DIR/verify.sh" "$BACKUP_PATH"
 
-# Never let an operator accidentally restore over the currently configured
-# primary database with a copy/paste of DATABASE_URL.
-if [ -n "${DATABASE_URL:-}" ] && [ "$RESTORE_DATABASE_URL" = "$DATABASE_URL" ]; then
-  echo 'Refusing restore: target database is identical to DATABASE_URL' >&2
+# The production application uses CHAT_DATABASE_URL, while backup jobs use
+# DATABASE_URL. Compare parsed database identity, not raw URL strings.
+command -v python3 >/dev/null 2>&1 || { echo 'Python 3 required to validate restore target' >&2; exit 3; }
+python3 "$SCRIPT_DIR/check_restore_target.py" || exit 3
+
+# A backup containing media should not silently restore only the database.
+# Explicitly opt in only for a deliberately isolated, database-only target.
+if [ -f "$BACKUP_PATH/media.tar.gz" ] && [ -z "$RESTORE_MEDIA_ROOT" ] && [ "${CHAT_ALLOW_DATABASE_ONLY_RESTORE:-0}" != "1" ]; then
+  echo 'Media archive exists but RESTORE_MEDIA_ROOT is missing; refusing partial restore' >&2
+  exit 3
+fi
+if [ -n "$RESTORE_MEDIA_ROOT" ] && [ ! -f "$BACKUP_PATH/media.tar.gz" ]; then
+  echo 'Media restore requested but backup has no media archive' >&2
   exit 3
 fi
 
