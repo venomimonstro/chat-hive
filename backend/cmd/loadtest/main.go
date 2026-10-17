@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -35,6 +34,12 @@ func main() {
 	concurrency := flag.Int("concurrency", 20, "concurrent workers/connections")
 	reconnectRounds := flag.Int("reconnect-rounds", 5, "reconnect cycles per worker")
 	flag.Parse()
+	if *requests <= 0 || *concurrency <= 0 || *concurrency > 10000 || *reconnectRounds <= 0 {
+		fatal("requests, concurrency and reconnect-rounds must be positive; concurrency <= 10000")
+	}
+	if _, err := url.ParseRequestURI(*base); err != nil {
+		fatal("invalid -base URL: " + err.Error())
+	}
 
 	access := strings.TrimSpace(os.Getenv("CHAT_LOAD_ACCESS_TOKEN"))
 	chatID := strings.TrimSpace(os.Getenv("CHAT_LOAD_CHAT_ID"))
@@ -80,7 +85,7 @@ func runHTTP(target, method, token, body string, total, concurrency int) {
 		}()
 	}
 	go func(){ for i:=0;i<total;i++{jobs<-struct{}{}};close(jobs);wg.Wait();close(results) }()
-	printResults(results,total,time.Since(started))
+	printResults(results,total,started)
 }
 
 func runMessageBurst(base, token, chatID string, total, concurrency int) {
@@ -106,7 +111,7 @@ func runMessageBurst(base, token, chatID string, total, concurrency int) {
 		}()
 	}
 	go func(){for i:=0;i<total;i++{jobs<-i};close(jobs);wg.Wait();close(results)}()
-	printResults(results,total,time.Since(started))
+	printResults(results,total,started)
 }
 
 func runWebSockets(base, token string, count int) {
@@ -129,6 +134,7 @@ func runWebSockets(base, token string, count int) {
 			defer conn.Close(websocket.StatusNormalClosure,"load test done")
 			var ready map[string]any
 			if err:=wsjson.Read(ctx,conn,&ready);err!=nil{results<-wsResult{err:err};return}
+			if ready["type"] != "ready" { results <- wsResult{err:fmt.Errorf("unexpected websocket readiness event: %v", ready["type"])}; return }
 			results<-wsResult{connect:time.Since(begin)}
 			<-ctx.Done()
 		}()
@@ -209,7 +215,50 @@ func issueTicket(base,token string)(string,error){
 func toWS(base,ticket string)(string,error){u,err:=url.Parse(base);if err!=nil{return "",err};if u.Scheme=="https"{u.Scheme="wss"}else{u.Scheme="ws"};u.Path="/api/v1/realtime";u.RawQuery=url.Values{"ticket":[]string{ticket}}.Encode();return u.String(),nil}
 func browserOrigin(base string)string{u,err:=url.Parse(base);if err!=nil{return base};u.Path="";u.RawQuery="";u.Fragment="";return strings.TrimRight(u.String(),"/")}
 
-func printResults(results <-chan result,total int,wall time.Duration){latencies:=make([]time.Duration,0,total);statuses:=map[int]int{};var failures atomic.Int64;for item:=range results{if item.Err!=nil{failures.Add(1);continue};statuses[item.Status]++;latencies=append(latencies,item.Duration)};sort.Slice(latencies,func(i,j int)bool{return latencies[i]<latencies[j]});fmt.Printf("requests=%d completed=%d failed=%d wall=%s rps=%.1f statuses=%v",total,len(latencies),failures.Load(),wall,float64(len(latencies))/wall.Seconds(),statuses);if len(latencies)>0{fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))};fmt.Println();bad:=failures.Load()>0;for status,count:=range statuses{if status<200||status>=400{fmt.Fprintf(os.Stderr,"unexpected status %d count=%d\n",status,count);bad=true}};if bad{os.Exit(1)}}
+// summarizeResults measures wall time only after all workers finish and their
+// results channel is closed. Measuring immediately after launching workers
+// dramatically overstates RPS and can invalidate an Alpha capacity decision.
+func summarizeResults(results <-chan result, total int, started time.Time) (time.Duration, []time.Duration, map[int]int, int64, bool) {
+	latencies := make([]time.Duration, 0, total)
+	statuses := make(map[int]int)
+	var failures int64
+	bad := false
+	for item := range results {
+		if item.Err != nil {
+			failures++
+			bad = true
+			continue
+		}
+		statuses[item.Status]++
+		latencies = append(latencies, item.Duration)
+		if item.Status < 200 || item.Status >= 300 {
+			bad = true
+		}
+	}
+	wall := time.Since(started)
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	if len(latencies) != total {
+		bad = true
+	}
+	return wall, latencies, statuses, failures, bad
+}
+
+func printResults(results <-chan result, total int, started time.Time) {
+	wall, latencies, statuses, failures, bad := summarizeResults(results, total, started)
+	rps := float64(0)
+	if wall > 0 {
+		rps = float64(len(latencies)) / wall.Seconds()
+	}
+	fmt.Printf("requests=%d completed=%d failed=%d wall=%s rps=%.1f statuses=%v", total, len(latencies), failures, wall, rps, statuses)
+	if len(latencies) > 0 {
+		fmt.Printf(" p50=%s p95=%s p99=%s", percentile(latencies, .50), percentile(latencies, .95), percentile(latencies, .99))
+	}
+	fmt.Println()
+	if bad {
+		fmt.Fprintln(os.Stderr, "load test failed: transport error, incomplete requests or unexpected HTTP status")
+		os.Exit(1)
+	}
+}
 func percentile(values []time.Duration,p float64)time.Duration{if len(values)==0{return 0};index:=int(float64(len(values)-1)*p);if index<0{index=0};if index>=len(values){index=len(values)-1};return values[index]}
 func newUUID()string{raw:=make([]byte,16);if _,err:=rand.Read(raw);err!=nil{panic(err)};raw[6]=(raw[6]&0x0f)|0x40;raw[8]=(raw[8]&0x3f)|0x80;value:=hex.EncodeToString(raw);return value[0:8]+"-"+value[8:12]+"-"+value[12:16]+"-"+value[16:20]+"-"+value[20:32]}
 func env(key,fallback string)string{if value:=strings.TrimSpace(os.Getenv(key));value!=""{return value};return fallback}
