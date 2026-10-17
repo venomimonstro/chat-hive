@@ -21,13 +21,16 @@ type DataStore interface {
 }
 
 type HTTPHandler struct {
-	store  DataStore
-	guard  *authhttp.Guard
-	logger *slog.Logger
+    store DataStore
+    guard *authhttp.Guard
+    logger *slog.Logger
+    // Export staging is disk-backed. Bound simultaneous private exports so
+    // authenticated clients cannot exhaust /tmp via concurrent requests.
+    exportSlots chan struct{}
 }
 
 func NewHTTPHandler(store DataStore, auth *identity.Service, logger *slog.Logger) *HTTPHandler {
-	return &HTTPHandler{store: store, guard: authhttp.New(auth), logger: logger}
+	return &HTTPHandler{store: store, guard: authhttp.New(auth), logger: logger, exportSlots: make(chan struct{}, 2)}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -65,9 +68,27 @@ func stageAccountExport(ctx context.Context, store DataStore, userID string) (*o
     return file,info.Size(),nil
 }
 
+func (h *HTTPHandler) acquireExportSlot() bool {
+    select {
+    case h.exportSlots <- struct{}{}:
+        return true
+    default:
+        return false
+    }
+}
+func (h *HTTPHandler) releaseExportSlot() {
+    <-h.exportSlots
+}
+
 func (h *HTTPHandler) export(w http.ResponseWriter, r *http.Request) {
     session, ok := h.guard.Required(w,r)
     if !ok {return}
+    if !h.acquireExportSlot() {
+        w.Header().Set("Retry-After","60")
+        writeAccountError(w,http.StatusTooManyRequests,"export_capacity","Export capacity reached; retry later")
+        return
+    }
+    defer h.releaseExportSlot()
     file, size, err := stageAccountExport(r.Context(),h.store,session.UserID)
     if err != nil {
         h.logger.Error("account export generation failed","error",err,"user_id",session.UserID)
