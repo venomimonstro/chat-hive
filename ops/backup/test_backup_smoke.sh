@@ -57,6 +57,19 @@ fi
   echo 'Failed restore left an unverified staging directory' >&2; exit 1;
 }
 
+# A restore into the backup directory must fail before touching any DB.
+export RESTORE_MEDIA_ROOT="$BACKUP/injected-media"
+if sh "$ROOT/ops/backup/restore.sh" "$BACKUP" > "$WORK/unsafe-restore.log" 2>&1; then
+  echo 'Unsafe restore inside the source backup was accepted' >&2; exit 1
+fi
+[ -f "$BACKUP/postgres.dump" ] || { echo 'Unsafe restore damaged the backup' >&2; exit 1; }
+export RESTORE_MEDIA_ROOT="$WORK/restore-target"
+export CHAT_MEDIA_ROOT="$WORK/restore-target"
+if sh "$ROOT/ops/backup/restore.sh" "$BACKUP" > "$WORK/live-media-restore.log" 2>&1; then
+  echo 'Restore into live media root was accepted' >&2; exit 1
+fi
+export CHAT_MEDIA_ROOT="$WORK/media"
+
 # A successful restore stages/extracts media then replaces the old tree.
 cat > "$WORK/bin/pg_restore" <<'EOF'
 #!/usr/bin/env sh

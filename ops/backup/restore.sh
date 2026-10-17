@@ -57,6 +57,20 @@ if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
     echo 'Refusing media restore through a symlinked parent directory' >&2
     exit 3
   fi
+  BACKUP_REAL="$(CDPATH= cd -- "$BACKUP_PATH" && pwd -P)"
+  case "$target/" in
+    "$BACKUP_REAL/"*) echo 'Media restore may not overwrite the backup itself' >&2; exit 3 ;;
+  esac
+  case "$BACKUP_REAL/" in
+    "$target/"*) echo 'Media restore may not replace an ancestor of the backup' >&2; exit 3 ;;
+  esac
+  if [ -n "${CHAT_MEDIA_ROOT:-}" ]; then
+    LIVE_MEDIA="$(realpath -m -- "$CHAT_MEDIA_ROOT")"
+    if [ "$target" = "$LIVE_MEDIA" ]; then
+      echo 'Refusing restore into the configured live media directory' >&2
+      exit 3
+    fi
+  fi
   case "$target" in
     /|/tmp|/home|/root|/var|/var/lib|/etc|/usr|/mnt|/srv|/opt)
       echo 'Refusing media restore into a system/shared directory' >&2; exit 3 ;;
