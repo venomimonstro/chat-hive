@@ -27,6 +27,30 @@ sh ops/backup/backup.sh
 
 The job writes into a temporary directory, verifies the PostgreSQL archive, computes SHA-256 checksums and only then atomically renames the directory to its final timestamp.
 
+## Scheduled daily backup on a systemd server
+
+The scheduled service is **opt-in**: no server setting is modified by a Git
+update or application restart. Install it on the actual host after configuring
+a dedicated backup target and a restricted environment file. First make
+`/etc/chat-hive/backup.env` (root-owned, chmod 600) containing
+`DATABASE_URL`, an absolute `CHAT_BACKUP_DIR` and `CHAT_MEDIA_ROOT`.
+Then run:
+
+```bash
+sudo bash ops/backup/install-timer.sh
+sudo systemctl start chat-hive-backup.service
+sudo systemctl status chat-hive-backup.service
+systemctl list-timers --all chat-hive-backup.timer
+```
+
+The timer runs daily at 02:00 UTC with up to 15 minutes of jitter and
+catches up missed events after reboot. The backup script now validates the
+**promoted** artifact before declaring success. Failed jobs remain visible in
+`journalctl -u chat-hive-backup.service`. Copy verified backups to
+independent off-site/immutable storage through your storage provider; this
+timer alone **does not** establish off-site copies or retention. Periodic
+isolated restore drills and monitoring are still mandatory.
+
 ## Verification
 
 ```sh

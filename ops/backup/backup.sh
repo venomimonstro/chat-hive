@@ -64,4 +64,7 @@ mv -T -- "$TMP" "$DEST"
 TMP=""
 rmdir "$LOCK"
 trap - EXIT INT TERM
-printf '%s\n' "Backup completed: $DEST"
+# A successful pg_dump is not yet a verified, relocatable backup. Fail the
+# scheduled job loudly if the promoted artifact cannot be read and checked.
+"$SCRIPT_DIR/verify.sh" "$DEST"
+printf '%s\n' "Backup completed and verified: $DEST"
