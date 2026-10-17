@@ -97,6 +97,7 @@ export class RealtimeClient {
     }
     this.socket = socket;
     let lastPongAt = Date.now();
+    let ready = false;
     // An unresolved WebSocket handshake must not block reconnection forever.
     // The browser can leave CONNECTING stuck when an intermediate proxy dies.
     this.openTimer = window.setTimeout(() => {
@@ -107,37 +108,47 @@ export class RealtimeClient {
     }, 15_000);
 
     socket.onopen = () => {
-      // A stale socket from before stop/start must never cancel the timer
-      // protecting a newer connection attempt.
       if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
       if (this.openTimer !== null) window.clearTimeout(this.openTimer);
-      this.openTimer = null;
-      window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
-      this.reconnectAttempt = 0;
-      lastPongAt = Date.now();
-      if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
-      this.pingTimer = window.setInterval(() => {
-        if (this.stopped || socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
-        // TCP/WebSocket can remain half-open after a network transition.
-        // If two or more heartbeats go unanswered, force reconnect and
-        // recover missed events through the durable REST synchronization.
-        if (Date.now() - lastPongAt > 75_000) {
-          socket.close(4000, 'heartbeat timeout');
-          return;
+      // TCP accepted does not mean the session was authenticated. Keep REST
+      // reconciliation active until the backend confirms realtime readiness.
+      this.openTimer = window.setTimeout(() => {
+        this.openTimer = null;
+        if (!this.stopped && this.socket === socket && !ready) {
+          socket.close(4000, 'readiness timeout');
         }
-        try { socket.send(JSON.stringify({ type: 'ping' })); }
-        catch { socket.close(4000, 'heartbeat send failed'); }
-      }, 25_000);
+      }, 15_000);
     };
 
     socket.onmessage = (message) => {
       if (this.stopped || this.socket !== socket) return;
       try {
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
-        if (event.type === 'pong' || event.type === 'ready') {
+        if (event.type === 'ready') {
+          if (ready) return;
+          ready = true;
+          if (this.openTimer !== null) window.clearTimeout(this.openTimer);
+          this.openTimer = null;
+          this.reconnectAttempt = 0;
           lastPongAt = Date.now();
+          window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
+          if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
+          this.pingTimer = window.setInterval(() => {
+            if (this.stopped || socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
+            if (Date.now() - lastPongAt > 75_000) {
+              socket.close(4000, 'heartbeat timeout');
+              return;
+            }
+            try { socket.send(JSON.stringify({ type: 'ping' })); }
+            catch { socket.close(4000, 'heartbeat send failed'); }
+          }, 25_000);
           return;
         }
+        if (event.type === 'pong') {
+          if (ready) lastPongAt = Date.now();
+          return;
+        }
+        if (!ready) return;
         window.dispatchEvent(new CustomEvent<RealtimeEvent>('chat:realtime', { detail: event }));
       } catch {
         // Invalid server events are ignored; REST sync remains authoritative.

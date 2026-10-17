@@ -68,6 +68,7 @@ test('missing pongs force a reconnect instead of leaving a stale connected socke
   const socket = env.sockets[0];
   socket.readyState = 1;
   socket.onopen();
+  socket.onmessage({ data: JSON.stringify({ type: 'ready' }) });
   env.advance(25_000);
   assert.equal(socket.sent.length, 1);
   assert.equal(socket.closes.length, 0);
@@ -107,5 +108,34 @@ test('a stuck WebSocket handshake is closed and reconnect scheduled', async () =
   assert.equal(socket.closes[0]?.reason, 'handshake timeout');
   assert.ok(Array.from(env.timers.values()).some((entry) => entry.kind === 'timeout'),
     'reconnect must be scheduled after a timed-out handshake');
+  env.client.stop();
+});
+
+test('opening TCP/WS alone does not claim realtime until a ready event', async () => {
+  const env = harness();
+  env.client.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const socket = env.sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  assert.equal(env.events.filter((e) => e.type === 'chat:connection' && e.detail === true).length, 0);
+  socket.onmessage({ data: JSON.stringify({ type: 'ready' }) });
+  assert.equal(env.events.filter((e) => e.type === 'chat:connection' && e.detail === true).length, 1);
+  socket.onmessage({ data: JSON.stringify({ type: 'ready' }) });
+  assert.equal(env.events.filter((e) => e.type === 'chat:connection' && e.detail === true).length, 1);
+  env.client.stop();
+});
+
+test('socket upgraded without server readiness is forcibly reconnected', async () => {
+  const env = harness();
+  env.client.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const socket = env.sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  const timer = Array.from(env.timers.values()).find((entry) => entry.kind === 'timeout');
+  assert.ok(timer, 'readiness watchdog missing');
+  timer.callback();
+  assert.equal(socket.closes[0]?.reason, 'readiness timeout');
   env.client.stop();
 });
