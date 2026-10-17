@@ -1,4 +1,5 @@
 'use client';
+import '../discover.css';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';

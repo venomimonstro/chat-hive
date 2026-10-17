@@ -1,4 +1,5 @@
 'use client';
+import '../search.css';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';

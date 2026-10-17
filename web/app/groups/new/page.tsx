@@ -1,4 +1,5 @@
 'use client';
+import '../../create.css';
 
 import { FormEvent, useState } from 'react';
 import { AppShell } from '../../../components/AppShell';
