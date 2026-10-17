@@ -20,6 +20,7 @@ import (
 var (
 	ErrInvalidImage = errors.New("invalid image")
 	ErrNotFound     = errors.New("media not found")
+	ErrCorruptMedia = errors.New("media file does not match stored metadata")
 	ErrForbidden    = errors.New("media access denied")
 )
 
@@ -251,10 +252,19 @@ func (s *Service) Open(ctx context.Context, viewerID, mediaID string) (*os.File,
 	}
 	file, err := s.files.Open(object.StorageKey)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		// FileStorage deliberately uses the package's ErrNotFound sentinel
+		// for an absent or unsafe object. Return 404, never a misleading 503.
+		if errors.Is(err, ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return nil, StoredObject{}, ErrNotFound
 		}
 		return nil, StoredObject{}, err
+	}
+	// Metadata and the on-disk file can diverge after an incomplete volume
+	// restore. Never send a truncated image with the database Content-Length.
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() != object.ByteSize {
+		_ = file.Close()
+		return nil, StoredObject{}, ErrCorruptMedia
 	}
 	return file, object, nil
 }

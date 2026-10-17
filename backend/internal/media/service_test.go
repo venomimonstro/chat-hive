@@ -120,3 +120,41 @@ func TestFileStorageRejectsSymlinkedFile(t *testing.T) {
 		t.Fatalf("must reject symlinked media object, got %v", err)
 	}
 }
+
+type resolvingStore struct {
+	*fakeStore
+	object StoredObject
+	allowed bool
+}
+func (f *resolvingStore) Resolve(_ context.Context, _, _ string) (StoredObject, bool, error) {
+	return f.object, f.allowed, nil
+}
+
+func TestOpenMissingMediaReturnsNotFound(t *testing.T) {
+	files := &FileStorage{root: t.TempDir()}
+	store := &resolvingStore{fakeStore: &fakeStore{}, allowed: true, object: StoredObject{
+		StorageKey: "ab/missing.jpg", ByteSize: 12,
+	}}
+	service := NewService(store, files)
+	file, _, err := service.Open(context.Background(), "viewer", "object-id")
+	if file != nil { _ = file.Close(); t.Fatal("missing image unexpectedly opened") }
+	if !errors.Is(err, ErrNotFound) { t.Fatalf("expected 404 sentinel, got %v", err) }
+}
+
+func TestOpenRejectsTruncatedMedia(t *testing.T) {
+	root := t.TempDir()
+	key := "ab/abcdef.jpg"
+	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o750); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(root, key), []byte("short"), 0o640); err != nil { t.Fatal(err) }
+	store := &resolvingStore{fakeStore: &fakeStore{}, allowed: true, object: StoredObject{
+		StorageKey: key, ByteSize: 500,
+	}}
+	service := NewService(store, &FileStorage{root: root})
+	file, _, err := service.Open(context.Background(), "viewer", "object-id")
+	if file != nil { _ = file.Close(); t.Fatal("truncated image unexpectedly opened") }
+	if !errors.Is(err, ErrCorruptMedia) { t.Fatalf("expected corrupted image error, got %v", err) }
+	store.object.ByteSize = 5
+	file, _, err = service.Open(context.Background(), "viewer", "object-id")
+	if err != nil { t.Fatalf("intact image rejected: %v", err) }
+	_ = file.Close()
+}
