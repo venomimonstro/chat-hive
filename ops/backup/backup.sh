@@ -30,6 +30,10 @@ if [ -e "$DEST" ]; then
   echo "Refusing to overwrite existing backup: $DEST" >&2
   exit 1
 fi
+if [ ! -d "$MEDIA_ROOT" ] && [ "$ALLOW_MISSING_MEDIA" != "1" ]; then
+  echo "Media directory is missing; refusing incomplete backup: $MEDIA_ROOT (set CHAT_BACKUP_ALLOW_MISSING_MEDIA=1 only for a verified media-free deployment)" >&2
+  exit 1
+fi
 TMP="$(mktemp -d "$BACKUP_DIR/.$STAMP.tmp.XXXXXX")"
 
 printf '%s\n' "Creating PostgreSQL backup..."
@@ -39,10 +43,6 @@ pg_restore --list "$TMP/postgres.dump" >/dev/null
 # promotion the temporary directory no longer exists.
 (cd "$TMP" && sha256sum postgres.dump > postgres.dump.sha256)
 
-if [ ! -d "$MEDIA_ROOT" ] && [ "$ALLOW_MISSING_MEDIA" != "1" ]; then
-  echo "Media directory is missing; refusing incomplete backup: $MEDIA_ROOT (set CHAT_BACKUP_ALLOW_MISSING_MEDIA=1 only for a verified media-free deployment)" >&2
-  exit 1
-fi
 if [ -d "$MEDIA_ROOT" ]; then
   printf '%s\n' "Creating media backup..."
   tar -C "$MEDIA_ROOT" -czf "$TMP/media.tar.gz" .
