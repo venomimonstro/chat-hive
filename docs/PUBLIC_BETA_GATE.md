@@ -88,3 +88,12 @@ Set `CHAT_BETA_PRODUCT_ITERATION_RECORD=evidence/product-iteration.json` for
 negative measured outcomes or missing comparison records. This is an
 observational product gate, **not causal evidence**. The owner must inspect
 cohort composition, sample sizes and moderation workload separately.
+
+### Evidence integrity check
+
+For Beta, also set `CHAT_BETA_METRICS_BASELINE` and
+`CHAT_BETA_METRICS_FOLLOWUP` to the two **original** JSON snapshots.
+The gate recomputes the comparison and SHA-256 hashes; merely editing
+`product-iteration.json` to say `improved` cannot satisfy the gate.
+An acknowledged high/critical security alert also remains a blocker until
+resolved, not merely acknowledged.

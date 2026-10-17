@@ -2,10 +2,11 @@
 """Require a measured, documented product change before widening Closed Alpha."""
 import json
 from pathlib import Path
+from compare import compare
 import re
 import sys
 
-def validate(path: Path) -> None:
+def validate(path: Path, baseline: Path, followup: Path) -> None:
     record = json.loads(path.read_text(encoding="utf-8"))
     if record.get("schema") != "chat-product-iteration-v1":
         raise ValueError("unsupported product iteration record")
@@ -23,11 +24,17 @@ def validate(path: Path) -> None:
         size = 64 if field.endswith("sha256") else 40
         if not re.fullmatch("[0-9a-f]{"+str(size)+"}", record.get(field,"")):
             raise ValueError("snapshot fingerprint or commit SHA invalid")
+    # Inspect actual snapshots and reproduce the evaluator output; a manually
+    # edited 'outcome: improved' field must not be sufficient to launch Beta.
+    expected = compare(baseline, followup, record["metric"], 30,
+                       record.get("change", ""), record["commit_before"], record["commit_after"])
+    if record != expected:
+        raise ValueError("product iteration record differs from verified source snapshots")
 
 if __name__ == "__main__":
     try:
-        if len(sys.argv) != 2: raise ValueError("usage: validate_record.py <record.json>")
-        validate(Path(sys.argv[1]))
+        if len(sys.argv) != 4: raise ValueError("usage: validate_record.py <record.json> <baseline.json> <followup.json>")
+        validate(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]))
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"BETA_PRODUCT_GATE_BLOCKED: {exc}", file=sys.stderr)
         sys.exit(2)

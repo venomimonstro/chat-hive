@@ -8,6 +8,8 @@ DB_URL="${CHAT_BETA_DATABASE_URL:-}"
 PENTEST_REPORT="${CHAT_BETA_PENTEST_REPORT:-}"
 LEGAL_SIGNOFF="${CHAT_BETA_LEGAL_SIGNOFF:-}"
 PRODUCT_RECORD="${CHAT_BETA_PRODUCT_ITERATION_RECORD:-}"
+PRODUCT_BASELINE="${CHAT_BETA_METRICS_BASELINE:-}"
+PRODUCT_FOLLOWUP="${CHAT_BETA_METRICS_FOLLOWUP:-}"
 
 fail(){ printf 'PUBLIC BETA BLOCKED: %s\n' "$*" >&2; exit 1; }
 step(){ printf '\n==> %s\n' "$*"; }
@@ -18,7 +20,9 @@ step(){ printf '\n==> %s\n' "$*"; }
 command -v psql >/dev/null 2>&1 || fail "psql is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 [[ -n "$PRODUCT_RECORD" && -s "$PRODUCT_RECORD" ]] || fail "CHAT_BETA_PRODUCT_ITERATION_RECORD is required"
-python3 ops/product/validate_record.py "$PRODUCT_RECORD" || fail "Sprint 29 product iteration evidence was rejected"
+[[ -n "$PRODUCT_BASELINE" && -s "$PRODUCT_BASELINE" ]] || fail "CHAT_BETA_METRICS_BASELINE is required"
+[[ -n "$PRODUCT_FOLLOWUP" && -s "$PRODUCT_FOLLOWUP" ]] || fail "CHAT_BETA_METRICS_FOLLOWUP is required"
+python3 ops/product/validate_record.py "$PRODUCT_RECORD" "$PRODUCT_BASELINE" "$PRODUCT_FOLLOWUP" || fail "Sprint 29 product iteration evidence was rejected"
 
 step "1/5 full Closed Alpha technical gate"
 bash ops/alpha/gate.sh
@@ -38,7 +42,7 @@ open_alerts="$(psql "$DB_URL" -At -v ON_ERROR_STOP=1 -c "
   SELECT count(*)
   FROM security_alerts a
   JOIN security_events e ON e.id=a.event_id
-  WHERE a.status='open' AND e.severity IN ('high','critical');
+  WHERE a.status IN ('open','acknowledged') AND e.severity IN ('high','critical');
 ")"
 [[ "$open_alerts" == "0" ]] || fail "$open_alerts open high/critical security alert(s)"
 
