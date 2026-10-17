@@ -101,3 +101,7 @@
 - [ ] Нет открытых high/critical Security Alerts.
 - [ ] Нет открытых/reviewing critical moderation cases.
 - [ ] `ops/beta/gate.sh` завершён PASS.
+
+## Non-bypassable migration check
+
+`ops/release/check.sh` now rejects `CHAT_SKIP_MIGRATION_VERIFY=1` and always verifies a clean PostgreSQL migration chain. Test-only shortcuts must never be accepted as release evidence.

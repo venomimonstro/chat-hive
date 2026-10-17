@@ -24,12 +24,11 @@ for file in docs/MASTER_PLAN.md docs/SECURITY.md docs/SECURITY_INCIDENT_RUNBOOK.
   [[ -s "$file" ]] || fail "missing $file"
 done
 
-if [[ "${CHAT_SKIP_MIGRATION_VERIFY:-0}" != "1" ]]; then
-  info "verifying clean PostgreSQL migration chain"
-  bash ops/migrations/verify-clean.sh
-else
-  printf 'WARNING: clean migration verification skipped explicitly. Do not use this setting for a release record.\n' >&2
+if [[ "${CHAT_SKIP_MIGRATION_VERIFY:-0}" == "1" ]]; then
+  fail "clean migration verification cannot be skipped for a release"
 fi
+info "verifying clean PostgreSQL migration chain"
+bash ops/migrations/verify-clean.sh
 
 info "checking production compose topology"
 command -v docker >/dev/null 2>&1 || fail "docker is required for production compose validation"
