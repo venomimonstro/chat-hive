@@ -19,6 +19,7 @@ function createApp(fetchHandler, locks) {
     exports,
     process: { env: { NEXT_PUBLIC_API_BASE_URL: '' } },
     fetch: fetchHandler,
+    Headers: globalThis.Headers,
     navigator: locks ? { locks } : {},
     window: {
       sessionStorage: {
@@ -133,4 +134,19 @@ test('stale unauthorized refresh cannot clear a newer session', async () => {
   finish({ status: 401, ok: false });
   assert.equal(await pending, null);
   assert.equal(app.getAccessToken(), 'new-account');
+});
+
+test('a temporarily unavailable session endpoint never logs the user out', async () => {
+  const app = createApp(async () => ({
+    status: 503, ok: false,
+    json: async () => ({ error: { message: 'Try again later' } })
+  }));
+  app.setAccessToken('still-valid');
+  await assert.rejects(app.getCurrentSession(), /временно недоступен/);
+  assert.equal(app.getAccessToken(), 'still-valid');
+});
+
+test('an unauthorized session response is still treated as logged out', async () => {
+  const app = createApp(async () => ({ status: 401, ok: false }));
+  assert.equal(await app.getCurrentSession(), null);
 });
