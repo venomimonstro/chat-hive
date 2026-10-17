@@ -281,6 +281,30 @@ A feature is not DONE until all applicable items are satisfied:
 8. Keep PostgreSQL/REST recovery authoritative even when realtime is available.
 9. Update this document when sprint state materially changes.
 
+## Release hardening work log — 2026-10-17
+
+The following implementation work has landed directly on `main` without GitHub Actions or CI. These code changes **do not close** any release-gated sprint:
+
+| Sprint | Implemented in code | Evidence still required |
+| --- | --- | --- |
+| 25 | Browser reconciles messages through REST on a reduced interval when WebSocket is healthy, falling back to faster polling when disconnected; background-tab polling is limited (`7d415dc`). | Server load results (p95/p99, CPU/RAM, concurrency ceiling, reconnect storm), measured regression and capacity decision. |
+| 26 | Stale administrator/group role rendering after chat switching prevented (`6060456`); prior PWA private-page cache hardening is in place. | Production secrets, network review and an independent pentest plus remediation. |
+| 27 | Backup/restore tooling exists. | Successful restore on an isolated host using a real production-like backup, with evidence for both database and media, RPO/RTO. |
+| 28 | Fixed an undeclared TypeScript field in the WebSocket client and late-response contamination of other chats (`eb17fdf`); preserved sessions across transient auth outages (`036ed88`); introduced dependency-free service-worker privacy tests in the manual release gate (`b21b914`). | Generate and commit genuine `web/package-lock.json` using npm; clean migrations; frontend typecheck/build, Go race tests, real-device Passkey tests, and full Alpha scenario sign-off. |
+| 29 | First-party dashboard and funnel instrumentation are already implemented. | Observe genuine Alpha cohort, document prioritized changes and re-measure activation/retention. |
+| 30 | Technical gate script and operational runbooks already exist. | Passed Alpha, independent pentest, monitoring/incident verification and legal/compliance approval. |
+
+Operational test commands (run from the repository root):
+
+```bash
+node --test web/tests/sw.test.cjs
+bash ops/release/check.sh
+bash ops/alpha/gate.sh
+bash ops/beta/gate.sh
+```
+
+The Alpha/Beta gates require their documented environment values, live target hosts and external evidence. They must not be marked PASS from source inspection alone. Do not fabricate the npm lockfile or replace deterministic `npm ci` with an uncontrolled install in production.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
