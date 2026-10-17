@@ -104,7 +104,13 @@ export function useLanguage() {
     void load();
     window.addEventListener(EVENT, sync);
     window.addEventListener('storage', sync);
-    return () => { active = false; window.removeEventListener(EVENT, sync); window.removeEventListener('storage', sync); };
+    window.addEventListener('chat:auth-changed', load);
+    return () => {
+      active = false;
+      window.removeEventListener(EVENT, sync);
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('chat:auth-changed', load);
+    };
   }, []);
 
   async function changeLanguage(next: Language) {

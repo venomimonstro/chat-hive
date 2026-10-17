@@ -1,7 +1,16 @@
 'use client';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
-const ACCESS_KEY = 'chat_access_token';
+const LEGACY_ACCESS_KEY = 'chat_access_token';
+// Access tokens are kept only in JS memory; session persistence uses the
+// HttpOnly, Secure and SameSite=Strict rotating refresh cookie.
+let memoryAccessToken: string | null = null;
+let legacyPurged = false;
+function purgeLegacyToken() {
+  if (legacyPurged || typeof window === 'undefined') return;
+  legacyPurged = true;
+  try { window.sessionStorage.removeItem(LEGACY_ACCESS_KEY); } catch {}
+}
 // Increment on explicit login, logout and successful rotations so an older
 // in-flight refresh cannot resurrect credentials after an account switch.
 let credentialGeneration = 0;
@@ -94,15 +103,17 @@ export type GroupMember = {
 };
 
 export function getAccessToken() {
-  if (typeof window === 'undefined') return null;
-  return window.sessionStorage.getItem(ACCESS_KEY);
+  purgeLegacyToken();
+  return memoryAccessToken;
 }
 
 export function setAccessToken(token: string | null) {
   credentialGeneration += 1;
-  if (typeof window === 'undefined') return;
-  if (token) window.sessionStorage.setItem(ACCESS_KEY, token);
-  else window.sessionStorage.removeItem(ACCESS_KEY);
+  memoryAccessToken = token;
+  purgeLegacyToken();
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event('chat:auth-changed'));
+  }
 }
 
 async function parseError(response: Response) {

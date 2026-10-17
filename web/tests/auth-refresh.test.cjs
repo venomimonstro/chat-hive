@@ -150,3 +150,13 @@ test('an unauthorized session response is still treated as logged out', async ()
   const app = createApp(async () => ({ status: 401, ok: false }));
   assert.equal(await app.getCurrentSession(), null);
 });
+
+test('access tokens are memory-only and never persisted in browser storage', () => {
+  const app = createApp(async () => ({ status: 200, ok: true }));
+  app.setAccessToken('private-token');
+  assert.equal(app.getAccessToken(), 'private-token');
+  // A fresh app instance cannot read the old tab's in-memory bearer token.
+  // The HttpOnly refresh cookie is the browser's only session persistence.
+  const fresh = createApp(async () => ({ status: 401, ok: false }));
+  assert.equal(fresh.getAccessToken(), null);
+});
