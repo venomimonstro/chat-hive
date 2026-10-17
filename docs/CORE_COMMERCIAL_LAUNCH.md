@@ -69,3 +69,18 @@ Additional changes after initial core-launch implementation:
 - The core two-user smoke checks that `GET /api/v1` reports `launch_mode: core` before making test writes. Even if the wrong deployment configuration disables the route filter, the smoke will refuse release.
 
 **Explicit unverified areas:** frontend `package-lock.json` is missing; the entire production build/typecheck and backend race suite have not run in this editing environment (Go toolchain local is older than the required module toolchain and network/DNS access is unavailable). Hardware Passkeys, real HTTP/CDN/browser compatibility, load characteristics, backup recovery, XSS/pentesting, operational key management, compliance, and accessibility require external sign-off. Therefore there is **no release approval** yet; do not bypass `ops/core/gate.sh`.
+
+## Контролируемая симуляция атак на собственный сервер
+
+`python3 ops/core/security_probe.py` выполняет менее 30 безопасных
+негативных запросов к указанному собственному **предпродакшен-хосту**:
+попытки доступа без авторизации, с поддельным токеном, к чужой переписке,
+закрытым социальным API, запрос с несколькими JSON-объектами,
+подменой Origin/CORS и проверку служебных HTTP-заголовков.
+
+Перед запуском укажите `CHAT_CORE_URL` (HTTPS), тестовый токен
+`CHAT_CORE_ACCESS_TOKEN_A` и
+`CHAT_CORE_ATTACK_SIMULATION_ACK=I_OWN_THIS_STAGING_HOST_AND_APPROVE_SAFE_TESTS`.
+Проверка включена в итоговый `ops/core/gate.sh`. Она не является
+пентестом, не включает DDoS/перебор паролей и не заменяет внешнюю
+проверку BOLA, XSS, CSRF, WebSocket и конфигурации сервера.

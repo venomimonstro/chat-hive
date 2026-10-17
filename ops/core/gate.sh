@@ -26,11 +26,13 @@ command -v sha256sum >/dev/null || fail "sha256sum required"
  cd "$(dirname -- "$ENCRYPTED_BACKUP")"
  sha256sum -c -- "$(realpath -- "$ENCRYPTED_BACKUP_CHECKSUM")"
 ) || fail "encrypted backup file SHA-256 did not verify"
-echo "[1/3] Full code, dependency and clean migration checks"
+echo "[1/4] Full code, dependency and clean migration checks"
 bash ops/release/check.sh
-echo "[2/3] Real server load and isolated backup restoration"
+echo "[2/4] Real server load and isolated backup restoration"
 bash ops/alpha/gate.sh
-echo "[3/3] Two-user core end-to-end smoke"
+echo "[3/4] Two-user core end-to-end smoke"
 python3 ops/core/smoke.py
+echo "[4/4] Low-volume security negative tests on the dedicated staging host"
+python3 ops/core/security_probe.py
 echo "CORE RELEASE TECHNICAL GATE PASS commit=$COMMIT"
 echo "Owner must still verify real-device UX, app-store/browser compatibility and sign off operational rollback."
