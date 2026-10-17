@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAccessToken, getLanguagePreference, saveLanguagePreference, type Language } from './api';
+import { getCurrentSession, getLanguagePreference, saveLanguagePreference, type Language } from './api';
 
 const KEY = 'chat-interface-language';
 const EVENT = 'chat:language';
@@ -92,14 +92,22 @@ export function useLanguage() {
   const [language, setLanguage] = useState<Language>('ru');
   useEffect(() => {
     let active = true;
+    let revision = 0;
     const sync = () => { if (active) setLanguage(readLanguage()); };
     const load = async () => {
+      const thisRevision = ++revision;
       sync();
-      if (!getAccessToken()) return;
       try {
+        // Short-lived bearer credentials intentionally live only in memory.
+        // Restore them through the HttpOnly cookie before reading preferences.
+        const session = await getCurrentSession();
+        if (!active || thisRevision !== revision || !session) return;
         const fromAccount = await getLanguagePreference();
-        if (active) { applyLanguage(fromAccount); setLanguage(fromAccount); }
-      } catch { /* Offline: continue using the local language. */ }
+        if (active && thisRevision === revision) {
+          applyLanguage(fromAccount);
+          setLanguage(fromAccount);
+        }
+      } catch { /* Offline or logged out: retain the local language. */ }
     };
     void load();
     window.addEventListener(EVENT, sync);
@@ -107,6 +115,7 @@ export function useLanguage() {
     window.addEventListener('chat:auth-changed', load);
     return () => {
       active = false;
+      revision++;
       window.removeEventListener(EVENT, sync);
       window.removeEventListener('storage', sync);
       window.removeEventListener('chat:auth-changed', load);
@@ -114,7 +123,8 @@ export function useLanguage() {
   }, []);
 
   async function changeLanguage(next: Language) {
-    if (getAccessToken()) {
+    const session = await getCurrentSession();
+    if (session) {
       // Do not claim the account changed if the API write failed.
       await saveLanguagePreference(next);
     }
