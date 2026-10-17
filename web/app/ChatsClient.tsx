@@ -156,9 +156,10 @@ export function ChatsClient() {
   async function syncLatest(chatID: string) {
     if (!chatID || syncingChatsRef.current.has(chatID)) return;
     syncingChatsRef.current.add(chatID);
+    const owner = accountRef.current;
     try {
-      const [items, queued] = await Promise.all([listMessages(chatID, undefined, currentMessagePageSize()), listOutbox(accountRef.current, chatID)]);
-      if (selectedIdRef.current !== chatID) return;
+      const [items, queued] = await Promise.all([listMessages(chatID, undefined, currentMessagePageSize()), listOutbox(owner, chatID)]);
+      if (selectedIdRef.current !== chatID || accountRef.current !== owner) return;
       const ordered = [...items].reverse();
       setMessages((current) => reconcileTimeline(current, items, queued, userId, chatID, true));
       // Reactions belong to a later release; no disabled API polling.
@@ -192,7 +193,7 @@ export function ChatsClient() {
           await removeOutbox(item.user_id, item.client_message_id);
           outboxRetryRef.current.delete(item.client_message_id);
           delivered++;
-          if (selectedIdRef.current === item.chat_id) {
+          if (accountRef.current === item.user_id && selectedIdRef.current === item.chat_id) {
             setMessages((current) => [
               ...current.filter((message) => message.client_message_id !== item.client_message_id),
               result.message
@@ -211,7 +212,7 @@ export function ChatsClient() {
       for (const key of outboxRetryRef.current.keys()) {
         if (!pendingIDs.has(key)) outboxRetryRef.current.delete(key);
       }
-      if (delivered > 0) await refreshChats();
+      if (delivered > 0 && items[0]?.user_id === accountRef.current) await refreshChats();
     } catch {
       // IndexedDB failure must not crash the messenger shell.
     } finally {
@@ -402,8 +403,14 @@ export function ChatsClient() {
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
       })
-      .catch((err) => active && setError(err instanceof Error ? err.message : 'Не удалось загрузить сообщения'))
-      .finally(() => active && setMessageLoading(false));
+      .catch((err) => {
+        if (active && selectedIdRef.current === selected.chat_id) {
+          setError(err instanceof Error ? err.message : 'Не удалось загрузить сообщения');
+        }
+      })
+      .finally(() => {
+        if (active && selectedIdRef.current === selected.chat_id) setMessageLoading(false);
+      });
 
     let elapsed = 0;
     const timer = window.setInterval(() => {
