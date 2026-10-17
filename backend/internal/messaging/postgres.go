@@ -276,8 +276,9 @@ func (s *PostgresStore) SendText(ctx context.Context, input SendInput) (Message,
 }
 
 func (s *PostgresStore) EditMessage(ctx context.Context, userID, messageID, body string) (Message, error) {
-	const query = `UPDATE messages m SET body=$3,edited_at=now() FROM chat_members cm WHERE m.id=$1::uuid AND m.sender_id=$2::uuid AND m.deleted_at IS NULL AND cm.chat_id=m.chat_id AND cm.user_id=$2::uuid AND cm.left_at IS NULL RETURNING m.id::text,m.chat_id::text,COALESCE(m.sender_id::text,''),m.client_message_id::text,m.sequence,m.type,m.body,m.reply_to_id::text,m.created_at,m.edited_at,m.deleted_at`
-	message, err := scanMessage(s.pool.QueryRow(ctx, query, messageID, userID, body))
+	const query = `UPDATE messages m SET body=$3,edited_at=now() FROM chat_members cm WHERE m.id=$1::uuid AND m.sender_id=$2::uuid AND m.deleted_at IS NULL AND cm.chat_id=m.chat_id AND cm.user_id=$2::uuid AND cm.left_at IS NULL
+        AND (NOT $4::boolean OR EXISTS(SELECT 1 FROM chats c WHERE c.id=m.chat_id AND c.kind='direct')) RETURNING m.id::text,m.chat_id::text,COALESCE(m.sender_id::text,''),m.client_message_id::text,m.sequence,m.type,m.body,m.reply_to_id::text,m.created_at,m.edited_at,m.deleted_at`
+	message, err := scanMessage(s.pool.QueryRow(ctx, query, messageID, userID, body, s.coreOnly))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Message{}, ErrMessageNotFound
 	}
@@ -285,8 +286,9 @@ func (s *PostgresStore) EditMessage(ctx context.Context, userID, messageID, body
 }
 
 func (s *PostgresStore) DeleteMessage(ctx context.Context, userID, messageID string) error {
-	const query = `UPDATE messages m SET body='',deleted_at=now() FROM chat_members cm WHERE m.id=$1::uuid AND m.sender_id=$2::uuid AND m.deleted_at IS NULL AND cm.chat_id=m.chat_id AND cm.user_id=$2::uuid AND cm.left_at IS NULL`
-	result, err := s.pool.Exec(ctx, query, messageID, userID)
+	const query = `UPDATE messages m SET body='',deleted_at=now() FROM chat_members cm WHERE m.id=$1::uuid AND m.sender_id=$2::uuid AND m.deleted_at IS NULL AND cm.chat_id=m.chat_id AND cm.user_id=$2::uuid AND cm.left_at IS NULL
+        AND (NOT $3::boolean OR EXISTS(SELECT 1 FROM chats c WHERE c.id=m.chat_id AND c.kind='direct'))`
+	result, err := s.pool.Exec(ctx, query, messageID, userID, s.coreOnly)
 	if err != nil {
 		return err
 	}
@@ -345,8 +347,9 @@ func (s *PostgresStore) ListReactions(ctx context.Context, userID, messageID str
 }
 
 func (s *PostgresStore) MarkRead(ctx context.Context, userID, chatID string, sequence int64) error {
-	const query = `UPDATE chat_members cm SET last_read_sequence=GREATEST(cm.last_read_sequence,LEAST($3,c.next_sequence-1)) FROM chats c WHERE cm.chat_id=c.id AND cm.chat_id=$1::uuid AND cm.user_id=$2::uuid AND cm.left_at IS NULL`
-	result, err := s.pool.Exec(ctx, query, chatID, userID, sequence)
+	const query = `UPDATE chat_members cm SET last_read_sequence=GREATEST(cm.last_read_sequence,LEAST($3,c.next_sequence-1)) FROM chats c WHERE cm.chat_id=c.id AND cm.chat_id=$1::uuid AND cm.user_id=$2::uuid AND cm.left_at IS NULL
+        AND (NOT $4::boolean OR c.kind='direct')`
+	result, err := s.pool.Exec(ctx, query, chatID, userID, sequence, s.coreOnly)
 	if err != nil {
 		return err
 	}

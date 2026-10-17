@@ -10,6 +10,7 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
     allow := []struct{ method,path string }{
         {"GET","/health/ready"},{"GET","/api/v1/auth/session"},
         {"POST","/api/v1/auth/email/start"},{"POST","/api/v1/auth/refresh"},
+        {"GET","/api/v1/admin/me"},{"POST","/api/v1/growth/events"},
         {"GET","/api/v1/me/profile"},{"PUT","/api/v1/me/onboarding"},
         {"PUT","/api/v1/me/preferences"},
         {"GET","/api/v1/chats"},{"POST","/api/v1/chats/direct"},
@@ -24,7 +25,7 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
         {"GET","/api/v1/feed"},{"GET","/api/v1/channels"},
         {"POST","/api/v1/channels"},{"POST","/api/v1/groups"},
         {"GET","/api/v1/media/images/id"},{"POST","/api/v1/media/images"},
-        {"GET","/api/v1/admin/me"},{"GET","/api/v1/notifications"},
+        {"GET","/api/v1/notifications"},
         {"GET","/api/v1/discovery/people"},{"POST","/api/v1/posts"},
         {"POST","/api/v1/messages/id/reactions/👍"},
         {"GET","/api/v1/messages/id/reactions"},

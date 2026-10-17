@@ -16,6 +16,11 @@ func coreAPIAllowed(method, path string) bool {
     fragments := strings.Split(strings.TrimPrefix(path, "/api/v1/"), "/")
     match := func(verbs ...string) bool { for _, verb := range verbs { if method == verb { return true } }; return false }
     switch fragments[0] {
+    case "admin":
+        // Administrative endpoints remain behind privileged passkey auth.
+        return len(fragments)>=2
+    case "growth":
+        return len(fragments)==2 && fragments[1]=="events" && match(http.MethodPost)
     case "auth":
         // Session security, logout, magic links, passkeys and optional Yandex.
         return len(fragments) >= 2 && len(fragments) <= 5 &&
