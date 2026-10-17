@@ -15,9 +15,10 @@ import type { RealtimeEvent } from '../lib/realtime';
 import { reconcileTimeline } from '../lib/messageTimeline';
 import { nextOutboxRetry, readyForOutboxRetry, RetryState } from '../lib/outboxRetry';
 import { useLanguage, type Language } from '../lib/language';
+import { currentMessagePageSize } from '../lib/networkBudget';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
-const PAGE_SIZE = 50;
+// Adaptive limits reduce initial JSON cost on slow connections.
 const HISTORY_CACHE_LIMIT = 8;
 type CachedHistory = { messages: LocalMessage[]; hasOlder: boolean };
 
@@ -84,6 +85,8 @@ export function ChatsClient() {
   const outboxRetryRef = useRef(new Map<string, RetryState>());
   const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
+  const refreshingChatsRef = useRef<Promise<void> | null>(null);
+  const refreshTimerRef = useRef<number | null>(null);
   const historyCacheRef = useRef(new Map<string, CachedHistory>());
   const draftsRef = useRef(new Map<string,string>());
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -118,26 +121,41 @@ export function ChatsClient() {
     replaceChatQuery(newID);
   }
 
-  async function refreshChats() {
-    try {
-      const items = await listChats();
-      lastFetchErrorRef.current = '';
-      setChats(items);
-      if (selectedIdRef.current) {
-        const fresh = items.find((item) => item.chat_id === selectedIdRef.current);
-        if (fresh) setSelected(fresh);
+  function refreshChats(): Promise<void> {
+    if (refreshingChatsRef.current) return refreshingChatsRef.current;
+    const owner = accountRef.current;
+    if (!owner) return Promise.resolve();
+    const pending = (async () => {
+      try {
+        const items = await listChats();
+        if (accountRef.current !== owner) return;
+        lastFetchErrorRef.current = '';
+        setChats(items);
+        if (selectedIdRef.current) {
+          const fresh = items.find((item) => item.chat_id === selectedIdRef.current);
+          if (fresh) setSelected(fresh);
+        }
+      } catch (err) {
+        if (accountRef.current !== owner) return;
+        const message = err instanceof Error ? err.message : 'Не удалось загрузить чаты';
+        if (lastFetchErrorRef.current !== message) {
+          setError(message);
+          lastFetchErrorRef.current = message;
+        }
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось загрузить чаты';
-      if (lastFetchErrorRef.current !== message) { setError(message); lastFetchErrorRef.current = message; }
-    }
+    })();
+    refreshingChatsRef.current = pending;
+    void pending.finally(() => {
+      if (refreshingChatsRef.current === pending) refreshingChatsRef.current = null;
+    });
+    return pending;
   }
 
   async function syncLatest(chatID: string) {
     if (!chatID || syncingChatsRef.current.has(chatID)) return;
     syncingChatsRef.current.add(chatID);
     try {
-      const [items, queued] = await Promise.all([listMessages(chatID, undefined, PAGE_SIZE), listOutbox(accountRef.current, chatID)]);
+      const [items, queued] = await Promise.all([listMessages(chatID, undefined, currentMessagePageSize()), listOutbox(accountRef.current, chatID)]);
       if (selectedIdRef.current !== chatID) return;
       const ordered = [...items].reverse();
       setMessages((current) => reconcileTimeline(current, items, queued, userId, chatID, true));
@@ -342,11 +360,20 @@ export function ChatsClient() {
       const event = rawEvent as CustomEvent<RealtimeEvent>;
       const detail = event.detail;
       if (!detail || detail.type !== 'message.created' || !detail.chat_id) return;
-      void refreshChats();
+      // Burst of realtime events -> one list reconciliation, not N requests.
+      if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshTimerRef.current = null;
+        void refreshChats();
+      }, 280);
       if (detail.chat_id === selectedIdRef.current) void syncLatest(detail.chat_id);
     };
     window.addEventListener('chat:realtime', listener as EventListener);
-    return () => window.removeEventListener('chat:realtime', listener as EventListener);
+    return () => {
+      window.removeEventListener('chat:realtime', listener as EventListener);
+      if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -362,11 +389,12 @@ export function ChatsClient() {
     setMessages(cached?.messages ?? []);
     setHasOlder(cached?.hasOlder ?? false);
     setMessageLoading(!cached);
-    Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(accountRef.current, selected.chat_id)])
+    const pageSize = currentMessagePageSize();
+    Promise.all([listMessages(selected.chat_id, undefined, pageSize), listOutbox(accountRef.current, selected.chat_id)])
       .then(async ([items, queued]) => {
         if (!active || selectedIdRef.current !== selected.chat_id) return;
         const ordered = [...items].reverse();
-        setHasOlder(items.length === PAGE_SIZE);
+        setHasOlder(items.length === pageSize);
         setMessages((current) => reconcileTimeline(current, items, queued, userId, selected.chat_id));
         // Reactions belong to a later release.
         const last = ordered.at(-1);
@@ -454,13 +482,14 @@ export function ChatsClient() {
       chatID: selected.chat_id, height: pane.scrollHeight, top: pane.scrollTop
     };
     try {
-      const items = await listMessages(selected.chat_id, first.sequence, PAGE_SIZE);
+      const pageSize = currentMessagePageSize();
+      const items = await listMessages(selected.chat_id, first.sequence, pageSize);
       if (selectedIdRef.current !== selected.chat_id) return;
       const ordered = [...items].reverse();
       // The same page may already have arrived through realtime recovery:
       // dedupe by stable client ID rather than blindly prepending it.
       setMessages((current) => reconcileTimeline(current, items, [], userId, selected.chat_id, true));
-      setHasOlder(items.length === PAGE_SIZE);
+      setHasOlder(items.length === pageSize);
       // Reactions belong to a later release.
     } catch (err) {
       olderScrollAnchorRef.current = null;
