@@ -21,14 +21,17 @@ type HTTPHandler struct {
 	tickets       *TicketManager
 	logger        *slog.Logger
 	originPattern string
+	originScheme string
 }
 
 func NewHTTPHandler(auth *identity.Service, hub *Hub, logger *slog.Logger, allowedOrigin string) *HTTPHandler {
-	pattern := ""
-	if parsed, err := url.Parse(strings.TrimSpace(allowedOrigin)); err == nil {
-		pattern = parsed.Host
+	pattern, scheme := "", ""
+	if parsed, err := url.Parse(strings.TrimSpace(allowedOrigin)); err == nil && parsed.Host != "" &&
+		(parsed.Scheme == "https" || parsed.Scheme == "http") {
+		pattern, scheme = parsed.Host, parsed.Scheme
 	}
-	return &HTTPHandler{guard: authhttp.New(auth), hub: hub, tickets: NewTicketManager(), logger: logger, originPattern: pattern}
+	return &HTTPHandler{guard: authhttp.New(auth), hub: hub, tickets: NewTicketManager(), logger: logger,
+		originPattern: pattern, originScheme: scheme}
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
@@ -59,8 +62,9 @@ func (h *HTTPHandler) connect(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin != "" {
 		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Host == "" || parsed.Host != h.originPattern ||
-			(parsed.Scheme != "https" && parsed.Scheme != "http") {
+		if err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Host, h.originPattern) ||
+			parsed.Scheme != h.originScheme || parsed.User != nil || parsed.Path != "" ||
+			parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
 			writeError(w, http.StatusForbidden, "invalid_origin", "Origin is not allowed")
 			return
 		}

@@ -49,3 +49,29 @@ func TestMalformedOriginDoesNotConsumeTicket(t *testing.T) {
 		t.Fatal("malformed origin consumed valid ticket")
 	}
 }
+
+func TestInsecureSameHostOriginCannotBurnTicket(t *testing.T) {
+	tickets := NewTicketManager()
+	token, _, err := tickets.Issue("secure-user")
+	if err != nil { t.Fatal(err) }
+	handler := &HTTPHandler{tickets: tickets, originPattern: "chat.example.ru", originScheme: "https"}
+	for _, origin := range []string{
+		"http://chat.example.ru",
+		"http://chat.example.ru:443",
+		"https://chat.example.ru.evil.com",
+		"https://attacker@chat.example.ru",
+		"https://chat.example.ru/path",
+		"https://chat.example.ru/?x=1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/realtime?ticket="+token, nil)
+		req.Header.Set("Origin", origin)
+		response := httptest.NewRecorder()
+		handler.connect(response, req)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("origin %q unexpectedly accepted, status=%d", origin, response.Code)
+		}
+		if _, valid := tickets.Peek(token); !valid {
+			t.Fatalf("invalid origin %q consumed valid ticket", origin)
+		}
+	}
+}
