@@ -27,6 +27,8 @@ sha256sum "$TMP/postgres.dump" > "$TMP/postgres.dump.sha256"
 if [ -d "$MEDIA_ROOT" ]; then
   printf '%s\n' "Creating media backup..."
   tar -C "$MEDIA_ROOT" -czf "$TMP/media.tar.gz" .
+  command -v python3 >/dev/null 2>&1 || { echo 'Python3 required for safe media backup' >&2; exit 2; }
+  python3 "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/check_media_archive.py" "$TMP/media.tar.gz"
   sha256sum "$TMP/media.tar.gz" > "$TMP/media.tar.gz.sha256"
 fi
 

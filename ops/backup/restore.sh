@@ -20,11 +20,8 @@ fi
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 "$SCRIPT_DIR/verify.sh" "$BACKUP_PATH"
 
-printf '%s\n' "Restoring PostgreSQL target..."
-pg_restore --dbname="$RESTORE_DATABASE_URL" --clean --if-exists --no-owner --no-acl "$BACKUP_PATH/postgres.dump"
-
+# Validate all potentially destructive targets before changing the database.
 if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
-  printf '%s\n' "Restoring media target..."
   case "$RESTORE_MEDIA_ROOT" in /*) ;; *) echo 'Media restore requires an absolute path' >&2; exit 3 ;; esac
   command -v realpath >/dev/null 2>&1 || { echo 'realpath required for safe media restore' >&2; exit 3; }
   target="$(realpath -m -- "$RESTORE_MEDIA_ROOT")"
@@ -33,6 +30,13 @@ if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
       echo 'Refusing media restore into a system/shared directory' >&2; exit 3 ;;
   esac
   [ ! -L "$RESTORE_MEDIA_ROOT" ] || { echo 'Media restore root must not be a symlink' >&2; exit 3; }
+fi
+
+printf '%s\n' "Restoring PostgreSQL target..."
+pg_restore --dbname="$RESTORE_DATABASE_URL" --clean --if-exists --no-owner --no-acl "$BACKUP_PATH/postgres.dump"
+
+if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
+  printf '%s\n' "Restoring media target..."
   mkdir -p "$RESTORE_MEDIA_ROOT"
   find "$RESTORE_MEDIA_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
   tar -C "$RESTORE_MEDIA_ROOT" -xzf "$BACKUP_PATH/media.tar.gz"
