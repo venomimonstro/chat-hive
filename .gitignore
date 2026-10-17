@@ -23,3 +23,8 @@ coverage/
 # Local data
 .local/
 data/
+
+# Private release evidence, alpha load records, and backup material
+evidence/
+alpha-records/
+backups/

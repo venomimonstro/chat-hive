@@ -97,3 +97,20 @@ The gate recomputes the comparison and SHA-256 hashes; merely editing
 `product-iteration.json` to say `improved` cannot satisfy the gate.
 An acknowledged high/critical security alert also remains a blocker until
 resolved, not merely acknowledged.
+
+### Capturing source metrics securely
+
+Use a valid owner passkey session token as an environment variable, not as a
+command-line argument. Snapshots are created with mode 0600 and cannot overwrite
+an earlier baseline. They contain only aggregated metrics (no user identifiers).
+
+```bash
+export CHAT_ALPHA_URL=https://<deployed-chat-host>
+export CHAT_PRODUCT_ACCESS_TOKEN='<temporary owner passkey access token>'
+python3 ops/product/capture.py --days 30 --out evidence/baseline.json
+# After shipping/measuring the actual change:
+python3 ops/product/capture.py --days 30 --out evidence/followup.json
+unset CHAT_PRODUCT_ACCESS_TOKEN
+```
+
+Store snapshots and comparison records off Git and in access-controlled storage.
