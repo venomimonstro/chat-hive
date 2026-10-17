@@ -86,7 +86,9 @@ func main() {
 	accountDataHTTP := accountdata.NewHTTPHandler(accountdata.NewStore(pool), identityService, logger)
     preferencesHTTP := preferences.NewHandler(pool, identityService, logger)
 
-	onboardingHTTP := onboarding.NewHTTPHandler(onboarding.NewService(onboarding.NewPostgresStore(pool)), identityService, logger)
+	onboardingService := onboarding.NewService(onboarding.NewPostgresStore(pool))
+    onboardingService.SetCoreOnly(coreLaunch)
+    onboardingHTTP := onboarding.NewHTTPHandler(onboardingService, identityService, logger)
 	socialHTTP := social.NewHTTPHandler(social.NewService(social.NewPostgresStore(pool)), identityService, logger)
 	messagingStore := messaging.NewPostgresStore(pool)
     messagingStore.SetCoreOnly(coreLaunch)

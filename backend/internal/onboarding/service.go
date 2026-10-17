@@ -44,9 +44,12 @@ type Store interface {
 	Complete(ctx context.Context, input CompleteInput) (Profile, error)
 }
 
-type Service struct{ store Store }
-
+type Service struct{
+    store Store
+    coreOnly bool
+}
 func NewService(store Store) *Service { return &Service{store: store} }
+func (s *Service) SetCoreOnly(enabled bool) {s.coreOnly=enabled}
 
 func (s *Service) ListInterests(ctx context.Context) ([]Interest, error) {
 	return s.store.ListInterests(ctx)
@@ -77,7 +80,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (Profile, e
 		seen[slug] = struct{}{}
 		clean = append(clean, slug)
 	}
-	if len(clean) < 3 || len(clean) > 12 {
+	if (!s.coreOnly && (len(clean) < 3 || len(clean) > 12)) || (s.coreOnly && len(clean) > 12) {
 		return Profile{}, fmt.Errorf("%w: choose 3 to 12 interests", ErrInvalidProfile)
 	}
 	input.Interests = clean
