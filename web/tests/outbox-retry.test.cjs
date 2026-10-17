@@ -9,9 +9,9 @@ const source = ts.transpileModule(
   readFileSync(join(__dirname, '../lib/outboxRetry.ts'), 'utf8'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }
 ).outputText;
-const exports = {};
-vm.runInNewContext(source, { exports });
-const { nextOutboxRetry, readyForOutboxRetry } = exports;
+const moduleExports = {};
+vm.runInNewContext(source, { exports: moduleExports });
+const { nextOutboxRetry, readyForOutboxRetry } = moduleExports;
 
 test('automatic failures back off exponentially instead of every polling tick', () => {
   let retry;
