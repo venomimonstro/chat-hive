@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from
 import { AppShell } from '../components/AppShell';
 import { Avatar, Badge, Button, IconButton, Skeleton } from '../components/ui';
 import {
-  ChatMessage, ChatSummary, ensureDirectChat, getCurrentSession, listChats, listMessages,
+  ChatMessage, ChatSummary, ensureDirectChat, getAccessToken, getCurrentSession, listChats, listMessages,
   markChatRead, sendTextMessage
 } from '../lib/api';
 import { deleteChatMessage, editChatMessage } from '../lib/messageActions';
@@ -229,6 +229,45 @@ export function ChatsClient() {
       .catch(() => { if (mounted) setError('Не удалось загрузить чаты. Проверьте соединение и повторите попытку.'); })
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let valid = true;
+    function clearPrivateState() {
+      historyCacheRef.current.clear();
+      draftsRef.current.clear();
+      outboxRetryRef.current.clear();
+      sendingIdsRef.current.clear();
+      syncingChatsRef.current.clear();
+      accountRef.current = '';
+      selectedIdRef.current = '';
+      setSelected(null);
+      setMessages([]);
+      setChats([]);
+      setDraft('');
+      setUserId('');
+    }
+    const reconcileAccount = () => {
+      if (!getAccessToken()) {
+        clearPrivateState();
+        window.location.replace('/login');
+        return;
+      }
+      void getCurrentSession().then((session) => {
+        if (!valid) return;
+        if (!session || (accountRef.current && session.user_id !== accountRef.current)) {
+          clearPrivateState();
+          window.location.replace(session ? '/' : '/login');
+        }
+      }).catch(() => {
+        // Temporary API outages do not mean that an account was revoked.
+      });
+    };
+    window.addEventListener('chat:auth-changed', reconcileAccount);
+    return () => {
+      valid = false;
+      window.removeEventListener('chat:auth-changed', reconcileAccount);
+    };
   }, []);
 
   useEffect(() => {
