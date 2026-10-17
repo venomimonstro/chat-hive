@@ -492,6 +492,44 @@ isolated real infrastructure, the load profile, pentest, Alpha cohort and
 legal/incident sign-off have not been verified. The frontend lockfile is
 still required.
 
+## October 17 — final development pass on open sprints
+
+Implementation committed to `main` (external acceptance remains outstanding):
+
+- **25:** Reliability and load math had previously been hardened: WebSocket
+  handshake/ready/pong timeouts, retry backoff, and accurate nearest-rank
+  p95/p99 metrics. Host capacity, failure thresholds and resource profiles
+  must still be measured on the deployed Alpha instance.
+- **26:** `736d817` requires the WebSocket browser Origin to match the exact
+  configured scheme/host; `f51a37f` verifies an invalid Origin never
+  consumes another user's one-use ticket. Independent pentest/remediation
+  and production configuration reviews remain unverified.
+- **27:** `1c19ad4` blocks PostgreSQL restoration into the configured live
+  database (including equivalent connection URLs), and refuses accidental
+  DB-only restoration when media is present. `1f5e831` also prevents
+  replacing the backup itself or the configured active media directory.
+  A real isolated restoration and actual RTO/RPO measurements remain open.
+- **28:** Offline safety/regression tests and manual release gates exist,
+  but `web/package-lock.json` is still absent. The npm registry is not
+  accessible from the editing runtime, so a genuine `npm install
+  --package-lock-only`, frontend build, Go race tests, migrations and
+  real-device login flows remain blocked/unverified.
+- **29:** `9df18cb` provides reproducible before/after D1/D7 retention
+  comparison. `b5d48d9` requires source snapshot verification.
+  `ed22921` adds private HTTPS capture of owner-only aggregate metrics.
+  `f205e2d` includes durable session-created events in retention activity
+  to reduce false churn caused by mutable last_seen timestamps. No actual
+  Alpha cohort observations have been captured or assessed yet.
+- **30:** `ca147a3` requires release-specific pentest/legal attestation
+  with document hashes, review dates, signatories and zero unresolved
+  Critical/High findings. `b5d48d9` also refuses acknowledged-but-
+  unresolved severe security alerts. Independent external reviews,
+  product iteration evidence and launch-owner signoff are still pending.
+
+**Status remains six open acceptance gates: sprints 25–30.** No fake
+lockfile, synthetic cohort improvement, forged external report, or invented
+server performance data may be used to mark a sprint DONE.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
