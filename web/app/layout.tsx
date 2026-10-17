@@ -17,8 +17,8 @@ import './notifications.css';
 import './traffic.css';
 
 export const metadata: Metadata = {
-  title: 'CHAT — Найди своих',
-  description: 'Быстрый социальный мессенджер для общения и поиска людей по интересам.',
+  title: 'CHAT — Личные сообщения',
+  description: 'Лёгкий и безопасный мессенджер для личной переписки.',
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg', apple: '/icon.svg' }
 };

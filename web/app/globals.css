@@ -234,3 +234,93 @@ button { color: inherit; }
   .appDevice { min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
   .appStory { display: none; }
 }
+
+
+/* Core messenger: full-height workspace, quiet ChatGPT-like surfaces,
+   Telegram-like conversation density and progressive mobile layout. */
+:root{
+  --color-bg:#f7f8fa; --color-surface:#fff;--color-surface-raised:#fff;
+  --color-line:#e9ecf0;--color-accent:#3478f6;--color-accent-soft:#edf4ff;
+  --radius-md:12px;--radius-lg:16px;--shadow-overlay:0 6px 32px rgba(14,25,38,.045);
+  color-scheme:light;
+}
+.coreShell,.coreShell.appShell--wide{
+  display:block;min-height:100dvh;padding:0;background:var(--color-bg);
+}
+.coreShell .appDevice,.coreShell .appDevice--wide{
+  width:min(1480px,100%);min-height:100dvh;max-height:100dvh;
+  margin:auto;border:0;border-left:1px solid var(--color-line);border-right:1px solid var(--color-line);
+  border-radius:0;box-shadow:none;
+}
+.coreTopbar{height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;border-bottom:1px solid var(--color-line);background:var(--color-surface);}
+.coreBrand{display:flex;align-items:center;gap:9px;font-size:17px;letter-spacing:-.04em;}
+.coreBrandIcon{width:27px;height:27px;border-radius:9px;background:var(--color-accent);color:white;
+  display:grid;place-items:center;font-weight:800;font-size:15px;}
+.coreBrandBeta{font-size:10px;letter-spacing:0;color:var(--color-muted);font-weight:500;}
+.coreTopActions{display:flex;align-items:center;gap:18px;font-size:13px;color:var(--color-muted);}
+.coreTopActions a:hover{color:var(--color-text);}
+.coreShell .appNav{min-height:54px;grid-template-columns:repeat(2,minmax(0,150px));
+  justify-content:center;gap:8px;padding:4px 16px;border-top:1px solid var(--color-line);backdrop-filter:none;}
+.coreShell .appNav__item{min-height:42px;flex-direction:row;gap:10px;font-size:17px;}
+.coreShell .appNav__item b{font-size:13px;font-weight:550;}
+.coreShell .appContent{overflow:hidden;}
+.coreShell .messenger{height:calc(100dvh - 110px);grid-template-columns:minmax(260px,360px) minmax(0,1fr);}
+.coreShell .messageList{background:#fafbfc;padding:20px clamp(14px,3vw,48px);}
+.coreShell .conversationPane{background:#fafbfc;}
+.coreShell .messageBubble{background:#fff;border:1px solid #edf0f3;box-shadow:none;max-width:min(76%,600px);}
+.coreShell .messageRow.isMine .messageBubble{background:#eaf3ff;border-color:#e7f0ff;}
+.coreShell .messageBubble p{font-size:14px;line-height:1.55;}
+.coreShell .conversationHeader{min-height:69px;padding:12px 24px;}
+.coreShell .chatRow{min-height:70px;}
+.coreShell .chatRow + .chatRow{border-top:none;}
+.coreShell .chatRowButton.isSelected{background:var(--color-accent-soft);border-radius:11px;}
+.coreShell .chatRowButton:hover:not(.isSelected){background:#f5f7fa;}
+.coreShell .messageComposer{grid-template-columns:minmax(0,1fr) 44px;gap:10px;padding:12px 20px;}
+.coreShell .messageComposer textarea{border:1px solid var(--color-line);border-radius:18px;background:#fff;min-height:43px;}
+.coreShell .messageActions{opacity:1;}
+.coreShell .uiIconButton{background:#f0f5ff;}
+.coreSettings{max-width:650px;margin:32px auto;padding:0 24px 40px;}
+.coreSettings>h1{font-size:28px;letter-spacing:-.045em;margin:18px 0;}
+.coreSettings>p{color:var(--color-muted);line-height:1.6;}
+.coreBack,.coreTextLink{color:var(--color-accent);font-size:13px;font-weight:600;}
+.coreAccountIdentity{display:flex;align-items:center;gap:16px;padding:20px 0 28px;}
+.coreAccountAvatar{width:62px;height:62px;border-radius:22px;background:var(--color-accent-soft);color:var(--color-accent);
+  display:grid;place-items:center;font-size:24px;font-weight:750;}
+.coreAccountIdentity>div:last-child{display:grid;gap:4px;}
+.coreAccountIdentity strong{font-size:18px;}
+.coreAccountIdentity span{font-size:13px;color:var(--color-muted);}
+.coreSettingsList{border:1px solid var(--color-line);border-radius:16px;overflow:hidden;margin-bottom:22px;background:var(--color-surface);}
+.coreSettingsList a{display:flex;align-items:center;gap:16px;min-height:60px;padding:12px 18px;border-bottom:1px solid var(--color-line);font-size:14px;}
+.coreSettingsList a:last-child{border:0;}
+.coreSettingsList a:hover{background:#f7f9fc;}
+.coreSettingsList a span{color:var(--color-accent);font-size:20px;min-width:22px;text-align:center;}
+.coreSettingsList a b{margin-left:auto;color:var(--color-muted);font-size:20px;font-weight:400;}
+.coreLanguageOptions{display:grid;gap:10px;margin:24px 0;}
+.coreLanguageOptions button{min-height:54px;border:1px solid var(--color-line);border-radius:12px;
+ background:var(--color-surface);text-align:left;padding:0 18px;cursor:pointer;color:var(--color-text);}
+.coreLanguageOptions button.isSelected{border-color:var(--color-accent);background:var(--color-accent-soft);}
+.coreSaved{color:var(--color-success)!important;}
+.coreOnboarding{max-width:540px;margin:auto;padding:32px;}
+.coreShell .onboardingForm input,.coreShell .onboardingForm textarea{border-radius:12px;}
+@media(prefers-color-scheme:dark){
+ :root{--color-bg:#131519;--color-surface:#1b1d22;--color-surface-raised:#1b1d22;
+ --color-line:#30333b;--color-text:#eff0f2;--color-muted:#a1a6b0;
+ --color-accent:#76a6ff;--color-accent-soft:#26354b;color-scheme:dark;}
+ .coreShell .messageList,.coreShell .conversationPane{background:#15171b;}
+ .coreShell .messageBubble{background:#23262c;border-color:#333740;}
+ .coreShell .messageRow.isMine .messageBubble{background:#273a54;border-color:#345073;}
+ .coreShell .chatRowButton:hover:not(.isSelected),.coreSettingsList a:hover{background:#25282e;}
+ .coreShell .messageComposer textarea,.coreLanguageOptions button{background:#24272d;}
+}
+@media(max-width:820px){
+ .coreTopbar{height:50px;padding:0 16px;}
+ .coreTopActions{gap:12px;}
+ .coreShell .appDevice,.coreShell .appDevice--wide{min-height:100dvh;max-height:100dvh;}
+ .coreShell .messenger{height:calc(100dvh - 104px);display:block;}
+ .coreShell .conversationListPane,.coreShell .conversationPane{height:100%;}
+ .coreShell .messageBubble{max-width:87%;}
+ .coreShell .messageComposer{padding:10px 12px max(10px,env(safe-area-inset-bottom));}
+ .coreSettings{margin:18px auto;padding:0 18px 36px;}
+ .coreOnboarding{margin:12px;padding:22px;}
+}

@@ -1,125 +1,61 @@
 'use client';
-
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Surface } from '../../components/ui';
-import { completeOnboarding, getProfile, Interest, listInterests } from '../../lib/api';
-import { takeReturnTo } from '../../lib/returnTo';
+import { completeOnboarding, getProfile } from '../../lib/api';
+import { useLanguage } from '../../lib/language';
 
 export function OnboardingForm() {
   const router = useRouter();
-  const [interests, setInterests] = useState<Interest[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [loadFailed, setLoadFailed] = useState(false);
-
+  const { t } = useLanguage();
+  const [username,setUsername] = useState('');
+  const [displayName,setDisplayName] = useState('');
+  const [bio,setBio] = useState('');
+  const [loading,setLoading] = useState(true);
+  const [saving,setSaving] = useState(false);
+  const [error,setError] = useState('');
+  const [loadFailed,setLoadFailed] = useState(false);
   useEffect(() => {
-    let mounted = true;
-    Promise.all([listInterests(), getProfile()])
-      .then(([items, profile]) => {
-        if (!mounted) return;
-        setInterests(items);
-        if (profile?.completed) {
-          router.replace(takeReturnTo('/'));
-          return;
-        }
-        if (profile) {
-          setUsername(profile.username ?? '');
-          setDisplayName(profile.display_name ?? '');
-          setBio(profile.bio ?? '');
-          setSelected(profile.interests ?? []);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setError('Не удалось загрузить данные. Обновите страницу.');
-          setLoadFailed(true);
-        }
-      })
-      .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
+    let active=true;
+    void getProfile().then(profile => {
+      if (!active) return;
+      if (profile.completed) { router.replace('/'); return; }
+      setUsername(profile.username ?? '');
+      setDisplayName(profile.display_name ?? '');
+      setBio(profile.bio ?? '');
+    }).catch(() => { if(active){setError(t.accountError);setLoadFailed(true);} })
+      .finally(() => {if(active)setLoading(false)});
+    return () => {active=false};
   }, [router]);
-
-  const canSubmit = useMemo(() => {
-    return /^[a-z0-9_]{3,32}$/.test(username) && displayName.trim().length > 0 && selected.length >= 3 && selected.length <= 12;
-  }, [displayName, selected.length, username]);
-
-  function toggleInterest(slug: string) {
-    setSelected((current) => current.includes(slug) ? current.filter((item) => item !== slug) : current.length < 12 ? [...current, slug] : current);
-  }
-
+  const valid=useMemo(() => /^[a-z0-9_]{3,32}$/.test(username) && !!displayName.trim()
+    && Array.from(displayName.trim()).length <= 80,[username,displayName]);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving || loadFailed) return;
-    setSaving(true);
-    setError('');
+    if (!valid || saving || loadFailed) return;
+    setSaving(true);setError('');
     try {
-      await completeOnboarding({
-        username: username.toLowerCase().trim(),
-        display_name: displayName.trim(),
-        bio: bio.trim(),
-        interests: selected
-      });
-      router.replace(takeReturnTo('/'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить профиль');
-    } finally {
-      setSaving(false);
-    }
+      await completeOnboarding({username:username.trim(),display_name:displayName.trim(),bio:bio.trim(),interests:[]});
+      router.replace('/');
+    } catch(err) {setError(err instanceof Error?err.message:t.accountError)}
+    finally {setSaving(false)}
   }
-
-  if (loading) {
-    return <Surface className="onboardingCard"><div className="authSpinner" /><p>Подготавливаем профиль…</p></Surface>;
-  }
-  if (loadFailed) {
-    return <Surface className="onboardingCard"><div className="authError" role="alert">{error}</div><Button type="button" onClick={() => window.location.reload()}>Повторить загрузку</Button></Surface>;
-  }
-
+  if (loading) return <Surface className="onboardingCard"><p>{t.preparing}</p></Surface>;
+  if (loadFailed) return <Surface className="onboardingCard"><p role="alert">{error}</p><Button onClick={()=>window.location.reload()}>{t.retryLoad}</Button></Surface>;
   return (
-    <Surface className="onboardingCard">
+    <Surface className="onboardingCard coreOnboarding">
       <div className="onboardingHeader">
-        <span className="eyebrow">ПЕРВЫЙ ЗАПУСК</span>
-        <h1>Соберите свой профиль</h1>
-        <p>Имя, адрес профиля и интересы нужны, чтобы CHAT сразу показал релевантных людей и сообщества.</p>
+        <span className="eyebrow">CHAT</span><h1>{t.setupProfile}</h1><p>{t.setupHint}</p>
       </div>
-
       <form className="onboardingForm" onSubmit={submit}>
-        <div className="onboardingGrid">
-          <label>
-            <span>Имя</span>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={80} required placeholder="Ольга" />
-          </label>
-          <label>
-            <span>Username</span>
-            <div className="usernameField"><span>@</span><input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={32} required placeholder="olga" /></div>
-          </label>
-        </div>
-
-        <label>
-          <span>О себе <small>{bio.length}/240</small></span>
-          <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={240} rows={3} placeholder="Коротко о себе — можно оставить пустым" />
-        </label>
-
-        <fieldset>
-          <legend>Интересы <small>Выберите от 3 до 12</small></legend>
-          <div className="interestGrid">
-            {interests.map((interest) => {
-              const active = selected.includes(interest.slug);
-              return <button key={interest.slug} type="button" className={`interestChip${active ? ' isSelected' : ''}`} aria-pressed={active} onClick={() => toggleInterest(interest.slug)}>{interest.label_ru}</button>;
-            })}
-          </div>
-        </fieldset>
-
-        {error ? <div className="authError" role="alert">{error}</div> : null}
-        <div className="onboardingFooter">
-          <span>{selected.length} выбрано</span>
-          <Button type="submit" disabled={!canSubmit || saving}>{saving ? 'Сохраняем…' : 'Начать пользоваться CHAT'}</Button>
-        </div>
+        <label><span>{t.displayName}</span><input autoFocus required value={displayName} maxLength={80}
+          onChange={e=>setDisplayName(e.target.value)} autoComplete="name" /></label>
+        <label><span>{t.username}</span><div className="usernameField"><span>@</span>
+          <input required value={username} minLength={3} maxLength={32} autoComplete="username"
+            onChange={e=>setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))} /></div></label>
+        <label><span>{t.about}</span><textarea rows={3} value={bio} maxLength={240} onChange={e=>setBio(e.target.value)} /></label>
+        {!valid && (username.length > 0 || displayName.length > 0) ? <p className="authError">{t.requiredName}</p>:null}
+        {error ? <p className="authError" role="alert">{error}</p> : null}
+        <Button type="submit" fullWidth disabled={!valid||saving}>{saving?t.saving:t.startUsing}</Button>
       </form>
     </Surface>
   );
