@@ -14,6 +14,7 @@ bash ops/backup/test_install_timer.sh
 info "running offline media archive safety tests"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required for safe media verification"
 python3 -m unittest discover -s ops/backup -p 'test_*.py'
+python3 -m unittest discover -s ops/product -p 'test_*.py'
 
 info "checking migration version uniqueness"
 duplicates="$(find backend/migrations -maxdepth 1 -type f -name '*.up.sql' -printf '%f\n' | sed -E 's/^([0-9]+)_.*/\1/' | sort | uniq -d)"

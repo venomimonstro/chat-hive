@@ -67,3 +67,24 @@ Public Beta should not be opened solely because infrastructure is stable. Review
 - moderation backlog.
 
 Sprint 29 exists to improve the measured weak points before widening Beta.
+
+## Mandatory measured product iteration (Sprint 29)
+
+Capture two owner-only `GET /api/v1/admin/product/metrics?days=30` JSON snapshots
+from **real, different Alpha deployments**. Do not put auth tokens or raw
+identifiers in Git. Use `ops/product/compare.py` with a full Git commit SHA
+for each deployment, a specific description of the change and at least 30
+eligible users per baseline/follow-up D1 or D7 cohort. Example:
+
+```bash
+python3 ops/product/compare.py evidence/before.json evidence/after.json \\
+  --metric d7 --commit-before '<40-char-commit>' --commit-after '<40-char-commit>' \\
+  --change 'Simplified signup to first-conversation onboarding' \\
+  --out evidence/product-iteration.json
+```
+
+Set `CHAT_BETA_PRODUCT_ITERATION_RECORD=evidence/product-iteration.json` for
+`ops/beta/gate.sh`. The gate refuses fabricated zero-sized cohorts,
+negative measured outcomes or missing comparison records. This is an
+observational product gate, **not causal evidence**. The owner must inspect
+cohort composition, sample sizes and moderation workload separately.
