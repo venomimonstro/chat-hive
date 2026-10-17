@@ -12,7 +12,7 @@ import {
 } from '../lib/messageActions';
 import { getGroupDetails, moderateDeleteGroupMessage } from '../lib/groupActions';
 import {
-  enqueueOutbox, findOutbox, listOutbox, migrateLegacyOutbox, OutboxItem, removeOutbox
+  enqueueOutbox, findOutbox, listOutbox, OutboxItem, removeOutbox
 } from '../lib/outbox';
 import type { RealtimeEvent } from '../lib/realtime';
 
@@ -76,6 +76,7 @@ export function ChatsClient() {
   const [error, setError] = useState('');
   const selectedIdRef = useRef('');
   const flushingRef = useRef(false);
+  const accountRef = useRef('');
   const syncingChatsRef = useRef(new Set<string>());
 
   function chooseChat(chat: ChatSummary | null) {
@@ -116,7 +117,7 @@ export function ChatsClient() {
     if (!chatID || syncingChatsRef.current.has(chatID)) return;
     syncingChatsRef.current.add(chatID);
     try {
-      const [items, queued] = await Promise.all([listMessages(chatID, undefined, PAGE_SIZE), listOutbox(chatID)]);
+      const [items, queued] = await Promise.all([listMessages(chatID, undefined, PAGE_SIZE), listOutbox(accountRef.current, chatID)]);
       if (selectedIdRef.current !== chatID) return;
       const ordered = [...items].reverse();
       const pending = queued.map((item) => asLocalMessage(item, userId));
@@ -137,15 +138,18 @@ export function ChatsClient() {
   }
 
   async function flushOutbox() {
-    if (flushingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+    if (!accountRef.current || flushingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
     flushingRef.current = true;
     try {
-      const items = await listOutbox();
+      const session = await getCurrentSession();
+      if (!session || session.user_id !== accountRef.current) return;
+      const items = await listOutbox(session.user_id);
       let delivered = 0;
       for (const item of items) {
+        if (item.user_id !== accountRef.current) break;
         try {
           const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
-          await removeOutbox(item.client_message_id);
+          await removeOutbox(item.user_id, item.client_message_id);
           delivered++;
           if (selectedIdRef.current === item.chat_id) {
             setMessages((current) => [
@@ -166,13 +170,13 @@ export function ChatsClient() {
   }
 
   useEffect(() => {
-    void migrateLegacyOutbox().finally(() => {
-      Promise.all([getCurrentSession(), listChats()])
+    void Promise.all([getCurrentSession(), listChats()])
         .then(([session, items]) => {
           if (!session) {
             window.location.replace('/login');
             return;
           }
+          accountRef.current = session.user_id;
           setUserId(session.user_id);
           setChats(items);
           const requested = new URLSearchParams(window.location.search).get('chat');
@@ -184,7 +188,6 @@ export function ChatsClient() {
         })
         .catch(() => setError('Не удалось загрузить чаты'))
         .finally(() => setLoading(false));
-    });
   }, []);
 
   useEffect(() => {
@@ -228,7 +231,7 @@ export function ChatsClient() {
 
     let active = true;
     setMessageLoading(true);
-    Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(selected.chat_id)])
+    Promise.all([listMessages(selected.chat_id, undefined, PAGE_SIZE), listOutbox(accountRef.current, selected.chat_id)])
       .then(async ([items, queued]) => {
         if (!active) return;
         const ordered = [...items].reverse();
@@ -297,10 +300,13 @@ export function ChatsClient() {
   }
 
   async function deliver(item: OutboxItem) {
+    if (!accountRef.current || item.user_id !== accountRef.current) return;
     setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'sending' } : message));
     try {
+      const session = await getCurrentSession();
+      if (!session || session.user_id !== item.user_id) throw new Error('Account changed');
       const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
-      await removeOutbox(item.client_message_id);
+      await removeOutbox(item.user_id, item.client_message_id);
       setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
       await refreshChats();
     } catch {
@@ -310,7 +316,7 @@ export function ChatsClient() {
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected || !accountRef.current || accountRef.current !== userId) return;
     const text = draft.trim();
     if (!text) return;
 
@@ -327,6 +333,7 @@ export function ChatsClient() {
     }
 
     const item: OutboxItem = {
+      user_id: accountRef.current,
       chat_id: selected.chat_id,
       client_message_id: crypto.randomUUID(),
       body: text,
@@ -346,7 +353,7 @@ export function ChatsClient() {
   }
 
   async function retry(message: LocalMessage) {
-    const item = await findOutbox(message.client_message_id).catch(() => null);
+    const item = await findOutbox(accountRef.current, message.client_message_id).catch(() => null);
     if (item) await deliver(item);
   }
 
