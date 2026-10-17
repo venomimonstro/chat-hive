@@ -7,9 +7,9 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const source = ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/messageTimeline.ts'),'utf8'),
   {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-const exports = {};
-vm.runInNewContext(source,{exports});
-const merge = exports.reconcileTimeline;
+const moduleExports = {};
+vm.runInNewContext(source,{exports:moduleExports});
+const merge = moduleExports.reconcileTimeline;
 const uid='alice', cid='chat-a';
 const msg=(id,sequence,chat_id=cid)=>({id,chat_id,client_message_id:id,sequence,type:'text',body:id,created_at:'2026-10-17T12:00:00Z'});
 const pending=(id,chat_id=cid,user_id=uid)=>({chat_id,user_id,client_message_id:id,body:'draft',created_at:'2026-10-17T12:00:00Z'});

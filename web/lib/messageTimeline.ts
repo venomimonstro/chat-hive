@@ -32,7 +32,7 @@ export function reconcileTimeline(
 
   const pending: TimelineMessage[] = queue
     .filter((item) => !knownIDs.has(item.client_message_id))
-    .map((item) => ({
+    .map((item): TimelineMessage => ({
       id: `local-${item.client_message_id}`,
       chat_id: chatId,
       sender_id: userId,
