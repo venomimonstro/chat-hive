@@ -295,16 +295,21 @@ func (h *HTTPHandler) refreshSession(w http.ResponseWriter, r *http.Request) {
 
 	tokens, err := h.service.RefreshSession(r.Context(), cookie.Value)
 	if err != nil {
-		h.clearRefreshCookie(w)
-		if errors.Is(err, ErrRefreshReuse) {
+		switch {
+		case errors.Is(err, ErrRefreshReuse):
+			h.clearRefreshCookie(w)
 			h.logger.Warn("refresh token reuse detected", "ip", h.clientIP(r))
 			writeAPIError(w, http.StatusUnauthorized, "session_revoked", "Session revoked")
-			return
-		}
-		if !errors.Is(err, ErrInvalidSession) {
+		case errors.Is(err, ErrInvalidSession):
+			h.clearRefreshCookie(w)
+			writeAPIError(w, http.StatusUnauthorized, "session_expired", "Session expired")
+		default:
+			// A temporary DB/network failure is not evidence of an expired
+			// session. Retain the browser's refresh cookie so it can retry.
 			h.logger.Error("refresh session failed", "error", err)
+			w.Header().Set("Retry-After", "5")
+			writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 		}
-		writeAPIError(w, http.StatusUnauthorized, "session_expired", "Session expired")
 		return
 	}
 
