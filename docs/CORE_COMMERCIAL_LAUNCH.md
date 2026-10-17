@@ -56,3 +56,16 @@ bash ops/backup/export-encrypted.sh /srv/chat-hive/backups/<snapshot>
 ```
 
 Перенесите `.age` и `.sha256` в независимое хранилище с ограниченными правами и версионированием. Восстановите копию в отдельной среде, используя приватный ключ, после чего проведите `ops/backup/drill.sh`. Для финального `ops/core/gate.sh` задайте `CHAT_CORE_ENCRYPTED_BACKUP_FILE` и `CHAT_CORE_ENCRYPTED_BACKUP_SHA256`. Контрольная сумма подтверждает целостность копии, но не её расшифровываемость — это доказывает только реальный тест восстановления на независимом узле.
+
+## Final audit hardening — 2026-10-17
+
+Additional changes after initial core-launch implementation:
+
+- `CHAT_LAUNCH_MODE=core` registers *only* launch-needed public HTTP handlers. Group, channel, media, feed, search and notification endpoints do not exist in the core routing tree; the independent allowlist still blocks accidental exposure. Media-storage configuration is unnecessary in text-only mode.
+- Authorizations for authentication routes use an explicit method/path allowlist, not a broad `/auth/*` wildcard. Public social profiles and reactions are rejected; contact blocking remains allowed.
+- Browser UI removes group and reaction handling. The Russian/English preference reloads through a refresh-cookie-backed session after the page is refreshed. User bearer tokens remain in tab memory, not `sessionStorage`.
+- Account export is staged privately before the server sends success headers. A failed export cannot return truncated JSON with HTTP 200. The temporary file has mode 0600 and is deleted after delivery; single-request size limit is 256 MiB.
+- POST/PUT authentication, onboarding and messaging decoders reject multiple JSON values and unexpected fields. Deletion of accounts also rejects trailing data.
+- The core two-user smoke checks that `GET /api/v1` reports `launch_mode: core` before making test writes. Even if the wrong deployment configuration disables the route filter, the smoke will refuse release.
+
+**Explicit unverified areas:** frontend `package-lock.json` is missing; the entire production build/typecheck and backend race suite have not run in this editing environment (Go toolchain local is older than the required module toolchain and network/DNS access is unavailable). Hardware Passkeys, real HTTP/CDN/browser compatibility, load characteristics, backup recovery, XSS/pentesting, operational key management, compliance, and accessibility require external sign-off. Therefore there is **no release approval** yet; do not bypass `ops/core/gate.sh`.

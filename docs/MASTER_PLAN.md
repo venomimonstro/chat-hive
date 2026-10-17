@@ -530,6 +530,19 @@ Implementation committed to `main` (external acceptance remains outstanding):
 lockfile, synthetic cohort improvement, forged external report, or invented
 server performance data may be used to mark a sprint DONE.
 
+## October 17 — restricted commercial messenger audit
+
+Implemented a default-deny **core launch** for registration, sign-in, account
+security, Russian/English language, direct-text messaging and message requests.
+Server-side feature lockdown, stripped frontend navigation, private-token
+handling, exact auth allowlists, private staged exports and negative tests were
+committed to `main`. Run `ops/core/gate.sh` plus independent pentest and
+real two-user smoke before making commercial access public.
+
+**The release is NOT approved yet:** missing `web/package-lock.json`, full
+Go/Next checks, actual Alpha load/recovery evidence and legal/security
+approval. Do not mark sprints 25–30 fully accepted without this evidence.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.

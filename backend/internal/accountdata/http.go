@@ -97,9 +97,14 @@ func (h *HTTPHandler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil || strings.TrimSpace(body.Confirmation) != "DELETE MY CHAT ACCOUNT" {
-		writeAccountError(w, http.StatusBadRequest, "confirmation_required", "Explicit account deletion confirmation is required")
-		return
-	}
+        writeAccountError(w,http.StatusBadRequest,"confirmation_required","Explicit account deletion confirmation is required")
+        return
+    }
+    var trailing any
+    if err := decoder.Decode(&trailing); err != io.EOF {
+        writeAccountError(w,http.StatusBadRequest,"invalid_request","Only one JSON object allowed")
+        return
+    }
 	if err := h.store.DeleteAccount(r.Context(), session.UserID); err != nil {
 		h.logger.Error("account deletion failed", "error", err, "user_id", session.UserID)
 		writeAccountError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
