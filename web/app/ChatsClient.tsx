@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../components/AppShell';
-import { Avatar, Badge, Button, IconButton, SearchField } from '../components/ui';
+import { Avatar, Badge, Button, IconButton, Skeleton } from '../components/ui';
 import {
   ChatMessage, ChatSummary, ensureDirectChat, getCurrentSession, listChats, listMessages,
   markChatRead, sendTextMessage
@@ -69,6 +69,10 @@ export function ChatsClient() {
   const [search, setSearch] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
+  const [creatingChat, setCreatingChat] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(true);
+  const [showOfflineWarning, setShowOfflineWarning] = useState(false);
+  const [activeActions, setActiveActions] = useState('');
   const [draft, setDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<LocalMessage | null>(null);
   const [editing, setEditing] = useState<LocalMessage | null>(null);
@@ -87,6 +91,7 @@ export function ChatsClient() {
   const lastScrolledChatRef = useRef('');
   const olderScrollAnchorRef = useRef<{ chatID: string; height: number; top: number } | null>(null);
   const lastFetchErrorRef = useRef('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
 
   function chooseChat(chat: ChatSummary | null) {
@@ -107,6 +112,7 @@ export function ChatsClient() {
     setSelected(chat);
     setReplyingTo(null);
     setEditing(null);
+    setActiveActions('');
     setDraft(draftsRef.current.get(newID) ?? '');
     setError('');
     replaceChatQuery(newID);
@@ -257,6 +263,42 @@ export function ChatsClient() {
   }, []);
 
   useEffect(() => {
+    const updateNetwork = () => setNetworkOnline(navigator.onLine);
+    updateNetwork();
+    window.addEventListener('online', updateNetwork);
+    window.addEventListener('offline', updateNetwork);
+    const onKey = (event: KeyboardEvent) => {
+      const element = event.target as HTMLElement | null;
+      const isTyping = element?.matches('input,textarea,[contenteditable="true"]') === true;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (event.key === 'Escape') {
+        if (activeActions) setActiveActions('');
+        if (showNewChat) setShowNewChat(false);
+        if (!isTyping && selectedIdRef.current) searchInputRef.current?.blur();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('online', updateNetwork);
+      window.removeEventListener('offline', updateNetwork);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [activeActions, showNewChat]);
+
+  useEffect(() => {
+    const update = () => setShowOfflineWarning(!navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  useEffect(() => {
     const listener = (rawEvent: Event) => {
       const event = rawEvent as CustomEvent<RealtimeEvent>;
       const detail = event.detail;
@@ -392,9 +434,10 @@ export function ChatsClient() {
 
   async function createChat(event: FormEvent) {
     event.preventDefault();
-    const username = newUsername.trim().replace(/^@/, '');
-    if (!username) return;
+    const username = newUsername.trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9_]{3,32}$/.test(username) || creatingChat) return;
     setError('');
+    setCreatingChat(true);
     try {
       const chat = await ensureDirectChat(username);
       setChats((current) => [chat, ...current.filter((item) => item.chat_id !== chat.chat_id)]);
@@ -403,6 +446,8 @@ export function ChatsClient() {
       setShowNewChat(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось создать диалог');
+    } finally {
+      setCreatingChat(false);
     }
   }
 
@@ -523,18 +568,24 @@ export function ChatsClient() {
             <div><span className="eyebrow">CHAT</span><h1>{t.chats}</h1></div>
             <IconButton type="button" aria-label={t.newChat} onClick={() => setShowNewChat((value) => !value)}>＋</IconButton>
           </header>
-          <div className="screenSearch"><SearchField value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t.searchChats} placeholder={t.searchChats} /></div>
+          <div className="screenSearch"><label className="uiSearch"><span aria-hidden="true">⌕</span><input ref={searchInputRef} type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t.searchChats} placeholder={t.searchChats} aria-keyshortcuts="Control+K Meta+K" /></label></div>
 
           {showNewChat ? (
             <form className="newChatForm" onSubmit={createChat}>
               <input autoFocus value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="@username" aria-label={t.username} />
-              <Button type="submit">{t.open}</Button>
+              <Button type="submit" disabled={creatingChat || !/^[a-z0-9_]{3,32}$/.test(newUsername.trim().replace(/^@/, ''))}>{creatingChat ? t.loading : t.open}</Button>
             </form>
           ) : null}
-          {error ? <div className="messengerError" role="alert">{error}</div> : null}
+          {!selected && error ? <div className="messengerError" role="alert">{error}</div> : null}
+          {showOfflineWarning ? <div className="networkBanner" role="status">{language === 'en' ? 'Offline. Messages will be queued on this device.' : 'Нет интернета. Сообщения будут сохранены в очереди на устройстве.'}</div> : null}
 
           <div className="chatList" aria-label={t.chats}>
-            {loading ? <div className="chatListState">{t.loadingChats}</div> : null}
+            {loading ? <div className="chatSkeletons" aria-label={t.loadingChats}>
+              {[1,2,3,4,5].map((item) => <div className="chatSkeletonRow" key={item}>
+                <Skeleton width={44} height={44}/>
+                <div><Skeleton width="75%" height={12}/><Skeleton width="55%" height={10}/></div>
+              </div>)}
+            </div> : null}
             {!loading && filteredChats.length === 0 ? <div className="chatListState">{t.emptyChats}</div> : null}
             {filteredChats.map((chat) => (
               <button className={`chatRow chatRowButton ${selected?.chat_id === chat.chat_id ? 'isSelected' : ''}`} key={chat.chat_id} onClick={() => chooseChat(chat)}>
@@ -557,6 +608,7 @@ export function ChatsClient() {
                 <IconButton className="conversationBack" type="button" aria-label={t.back} onClick={() => chooseChat(null)}>‹</IconButton>
                 <Avatar name={chatName(selected)} size="sm" />
                 <div className="conversationIdentity"><strong>{chatName(selected)}</strong>{selected.peer_username ? <span>@{selected.peer_username}</span> : null}</div>
+                <span className="connectionStatus" title={networkOnline ? '' : 'Offline'}>{networkOnline ? '' : (language === 'en' ? 'Offline' : 'Нет сети')}</span>
               </header>
               {error ? <div className="conversationError" role="alert">{error}</div> : null}
               <div className="messageList" ref={messageListRef} role="log" aria-label={t.message} aria-relevant="additions" onScroll={(event) => {
@@ -564,7 +616,9 @@ export function ChatsClient() {
                 shouldStickToBottomRef.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120;
               }}>
                 {hasOlder ? <button className="loadOlderButton" type="button" onClick={loadOlder} disabled={olderLoading}>{olderLoading ? t.loading : t.older}</button> : null}
-                {messageLoading ? <div className="chatListState">{t.loadingHistory}</div> : null}
+                {messageLoading && messages.length === 0 ? <div className="messageSkeleton" aria-label={t.loadingHistory}>
+                  <Skeleton width="48%" height={36}/><Skeleton width="63%" height={48}/><Skeleton width="42%" height={36}/>
+                </div> : null}
                 {messages.map((message) => {
                   const mine = message.sender_id === userId;
                   const replied = message.reply_to_id ? messageByID.get(message.reply_to_id) : undefined;
@@ -580,10 +634,13 @@ export function ChatsClient() {
                           {message.local_status === 'failed' ? <button type="button" onClick={() => void retry(message)}>{t.retry}</button> : null}
                         </div>
                         {!message.local_status && !message.deleted_at ? (
-                          <div className="messageActions">
-                            <button type="button" onClick={() => beginReply(message)}>{t.reply}</button>
-                            {mine ? <button type="button" onClick={() => beginEdit(message)}>{t.edit}</button> : null}
-                            {mine ? <button type="button" className="danger" onClick={() => void removeMessage(message)}>{t.delete}</button> : null}
+                          <div className="messageActionContainer">
+                            <button className="messageActionToggle" type="button" aria-label={language === 'en' ? 'Message actions' : 'Действия с сообщением'} aria-expanded={activeActions === message.id} onClick={() => setActiveActions((id) => id === message.id ? '' : message.id)}>···</button>
+                            {activeActions === message.id ? <div className="messageActions">
+                              <button type="button" onClick={() => { beginReply(message); setActiveActions(''); }}>{t.reply}</button>
+                              {mine ? <button type="button" onClick={() => { beginEdit(message); setActiveActions(''); }}>{t.edit}</button> : null}
+                              {mine ? <button type="button" className="danger" onClick={() => { void removeMessage(message); setActiveActions(''); }}>{t.delete}</button> : null}
+                            </div> : null}
                           </div>
                         ) : null}
                       </div>
@@ -603,7 +660,14 @@ export function ChatsClient() {
                   const next = e.target.value;
                   setDraft(next);
                   if (selectedIdRef.current) draftsRef.current.set(selectedIdRef.current, next);
-                }} rows={1} maxLength={4096} placeholder={editing ? t.edit : t.message} aria-label={t.message} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+                }} rows={1} maxLength={4096} placeholder={editing ? t.edit : t.message} aria-label={t.message} onKeyDown={(e) => {
+                  // Do not submit mid-composition for Cyrillic/Chinese IMEs.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                  if (e.key === 'Escape' && (replyingTo || editing)) cancelComposerContext();
+                }} />
                 <button className="sendMessageButton" type="submit" disabled={!draft.trim()} aria-label={editing ? t.save : t.send}>{editing ? '✓' : '↑'}</button>
               </form>
             </>
