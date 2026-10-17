@@ -371,10 +371,13 @@ func (h *HTTPHandler) authenticateRequest(w http.ResponseWriter, r *http.Request
 	}
 	session, err := h.service.AuthenticateAccessToken(r.Context(), rawToken)
 	if err != nil {
-		if !errors.Is(err, ErrInvalidSession) {
+		if errors.Is(err, ErrInvalidSession) {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		} else {
 			h.logger.Error("access session validation failed", "error", err)
+			w.Header().Set("Retry-After", "5")
+			writeAPIError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "Try again later")
 		}
-		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return AuthenticatedSession{}, false
 	}
 	return session, true

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type unavailableRefreshStore struct{ *fakeStore }
@@ -33,6 +34,23 @@ func TestRefreshOutageRetainsBrowserCookie(t *testing.T) {
 	if res.Header().Get("Retry-After") == "" {
 		t.Fatal("temporary outage must provide Retry-After")
 	}
+}
+
+type unavailableAccessStore struct{ *fakeStore }
+func (s *unavailableAccessStore) FindSessionByAccessTokenHash(_ context.Context, _ []byte, _ time.Time) (AuthenticatedSession, error) {
+	return AuthenticatedSession{}, errors.New("database unavailable")
+}
+
+func TestAccessOutageIsNotAnAuthenticationFailure(t *testing.T) {
+	service := NewService(&unavailableAccessStore{fakeStore: &fakeStore{}}, &fakeSender{})
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewHTTPHandler(service, logger, true)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer access")
+	res := httptest.NewRecorder()
+	handler.currentSession(res, req)
+	if res.Code != http.StatusServiceUnavailable { t.Fatalf("expected 503 during outage, got %d", res.Code) }
+	if res.Header().Get("Retry-After") == "" { t.Fatal("outage should be retryable") }
 }
 
 func TestInvalidRefreshStillClearsBrowserCookie(t *testing.T) {

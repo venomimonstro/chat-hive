@@ -26,6 +26,12 @@ export PATH="$WORK/bin:$PATH"
 export DATABASE_URL='postgres://example.invalid/offline'
 export CHAT_BACKUP_DIR="$WORK/backups"
 export CHAT_MEDIA_ROOT="$WORK/media"
+# Force the SAME timestamp for both invocations, even on slow CI/hosts.
+cat > "$WORK/bin/date" <<'EOF'
+#!/usr/bin/env sh
+printf '20261017T120000Z\n'
+EOF
+chmod +x "$WORK/bin/date"
 bash "$ROOT/ops/backup/backup.sh" > "$WORK/first.log"
 BACKUP="$(find "$WORK/backups" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print -quit)"
 [ -n "$BACKUP" ] || { echo "No completed backup" >&2; exit 1; }

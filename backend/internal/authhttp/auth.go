@@ -2,6 +2,7 @@ package authhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -24,7 +25,12 @@ func (g *Guard) Required(w http.ResponseWriter, r *http.Request) (identity.Authe
 	}
 	session, err := g.auth.AuthenticateAccessToken(r.Context(), token)
 	if err != nil {
-		WriteUnauthorized(w)
+		if errors.Is(err, identity.ErrInvalidSession) {
+			WriteUnauthorized(w)
+		} else {
+			// Persistence failure is not evidence that a user logged out.
+			WriteUnavailable(w)
+		}
 		return identity.AuthenticatedSession{}, false
 	}
 	return session, true
@@ -57,4 +63,12 @@ func WriteUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte("{\"error\":{\"code\":\"unauthorized\",\"message\":\"Authentication required\"}}"))
+}
+
+func WriteUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte("{\"error\":{\"code\":\"temporarily_unavailable\",\"message\":\"Try again later\"}}"))
 }
