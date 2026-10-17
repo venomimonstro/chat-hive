@@ -57,7 +57,9 @@ func coreAPIAllowed(method, path string) bool {
         if len(fragments)==1 { return match(http.MethodGet) }
         if len(fragments)==2 && fragments[1]=="ticket" { return match(http.MethodPost) }
     case "profiles":
-        if len(fragments)==2 { return match(http.MethodGet) }
+        // Social follower counts, interests and biographies are not required
+        // for core private messaging. Avoid public profile enumeration in v1.
+        // Retain explicit contact blocking as an authenticated safety control.
         if len(fragments)==3 && (fragments[2]=="block" || fragments[2]=="unblock") {
             return match(http.MethodPost,http.MethodDelete)
         }

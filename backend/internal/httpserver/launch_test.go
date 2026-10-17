@@ -17,7 +17,7 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
         {"GET","/api/v1/chats/id/messages"},{"POST","/api/v1/chats/id/messages"},
         {"POST","/api/v1/chats/id/read"},{"GET","/api/v1/message-requests"},
         {"POST","/api/v1/message-requests/id/accept"},{"GET","/api/v1/realtime"},
-        {"POST","/api/v1/realtime/ticket"},{"GET","/api/v1/profiles/alice"},
+        {"POST","/api/v1/realtime/ticket"},{"POST","/api/v1/profiles/alice/block"},
         {"DELETE","/api/v1/me/account"},
     }
     for _,tc:=range allow {if !coreAPIAllowed(tc.method,tc.path){t.Errorf("blocked core route %s %s",tc.method,tc.path)}}
@@ -30,6 +30,7 @@ func TestCoreLaunchRouteAllowlist(t *testing.T) {
         {"POST","/api/v1/messages/id/reactions/👍"},
         {"GET","/api/v1/messages/id/reactions"},
         {"POST","/api/v1/messages/reactions/batch"},
+        {"GET","/api/v1/profiles/alice"},
         {"POST","/api/v1/profiles/alice/follow"},
         {"GET","/api/v1/me/data-export/anything"},
         {"POST","/api/v1/me/onboarding"},
