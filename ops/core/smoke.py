@@ -108,6 +108,37 @@ def run():
     need(200,code,"recipient receives message")
     if not any(m.get("client_message_id")==message_id for m in received.get("items",[])):
         raise RuntimeError("recipient did not receive message")
+    # Object-level authorization: possessing a chat and message UUID must
+    # never let another participant edit/delete its author's messages.
+    message_path = f"/api/v1/messages/{quote(stored['id'])}"
+    code,_ = request(opener,origin,"PUT",message_path,b,{"text":"tamper"})
+    need(404,code,"recipient must not edit somebody else's message")
+    code,_ = request(opener,origin,"DELETE",message_path,b)
+    need(404,code,"recipient must not delete somebody else's message")
+    # Confirm the other participant can send their own message and both users
+    # can read it, preserving per-message authorship across the same chat.
+    reply_id = str(uuid.uuid4())
+    code,b_response = request(opener,origin,"POST",f"/api/v1/chats/{quote(cid)}/messages",b,
+                              {"client_message_id":reply_id,"text":"CHAT_CORE_E2E_REPLY"})
+    need(201,code,"recipient reply")
+    reply = b_response.get("message",{})
+    if reply.get("client_message_id") != reply_id:
+        raise RuntimeError("recipient reply was not saved")
+    reply_path = f"/api/v1/messages/{quote(reply['id'])}"
+    code,_ = request(opener,origin,"DELETE",reply_path,a)
+    need(404,code,"initiator must not delete recipient reply")
+    code,final = request(opener,origin,"GET",f"/api/v1/chats/{quote(cid)}/messages",a)
+    need(200,code,"verify untampered chat history")
+    by_id = {item.get("id"): item for item in final.get("items",[])}
+    if by_id.get(stored["id"],{}).get("body") != body:
+        raise RuntimeError("unauthorized message edit/delete changed stored data")
+    if by_id.get(reply["id"],{}).get("body") != "CHAT_CORE_E2E_REPLY":
+        raise RuntimeError("recipient reply not visible to the chat peer")
+    # A valid UUID from a chat with no membership must be indistinguishable
+    # from a missing resource, not leak participant/content data.
+    unrelated_chat = str(uuid.uuid4())
+    code,_ = request(opener,origin,"GET",f"/api/v1/chats/{unrelated_chat}/messages",a)
+    need(404,code,"nonmember must not enumerate other message histories")
     for method,path in [
         ("GET","/api/v1/channels"),("GET","/api/v1/communities"),
         ("GET","/api/v1/feed"),("GET","/api/v1/media/images/sample"),
@@ -119,7 +150,7 @@ def run():
         need(404,code,"disabled feature "+path)
     code,_ = request(opener,origin,"GET","/api/v1/chats")
     need(401,code,"unauthenticated access")
-    print("CORE E2E PASS: two users, account language, direct chat, one-time send, recipient delivery, disabled future features")
+    print("CORE E2E PASS: two users, account language, idempotent direct chats, delivery, cross-user authorization, disabled future features")
 
 if __name__ == "__main__":
     try:
