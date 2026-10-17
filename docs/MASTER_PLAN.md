@@ -411,6 +411,20 @@ acceptance evidence is recorded. Frontend lockfile and full build, production
 load and restore drill, independent pentest and manual Beta sign-off remain
 release blockers.
 
+## October 17 incremental safety gates
+
+- **Sprint 27:** `898f521` refuses incomplete backups when the media root is
+  missing, with an explicit opt-in solely for genuinely media-free instances;
+  `54756b0` performs this check before the expensive database dump.
+  Offline regression coverage was added. A real isolated restore is still
+  required to close the sprint.
+- **Sprint 28:** `44d72e8` makes the clean-migration verification
+  non-bypassable in the manual release gate. The actual full Go/Next.js build,
+  device scenarios and Alpha acceptance record are still required.
+
+**Remaining open sprints: 25, 26, 27, 28, 29, 30.**
+`main` changes alone do not establish release readiness.
+
 ## Current next action
 
 Sprint 03 and Sprint 24 are complete. Next focus is server-verified Sprint 25/27 evidence and Sprint 28 Closed Alpha readiness: generate and commit the frontend npm lockfile, run the release gate, clean migrations, real-device Passkey smoke, load tests and restore drill on the target host.
