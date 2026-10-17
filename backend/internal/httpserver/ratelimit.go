@@ -16,6 +16,8 @@ type rateBucket struct {
 	lastAccess time.Time
 }
 
+const maxTrackedClientBuckets = 50_000
+
 type RateLimiter struct {
 	mu         sync.Mutex
 	buckets    map[string]*rateBucket
@@ -55,6 +57,11 @@ func (l *RateLimiter) Allow(key string, ratePerSecond, burst float64) (bool, int
 		l.lastSweep = now
 	}
 	bucket := l.buckets[key]
+    if bucket == nil && len(l.buckets) >= maxTrackedClientBuckets {
+        // A spoofed/proxy-address flood cannot grow the map without bound.
+        // Unknown sources fail closed until stale buckets are collected.
+        return false, 60
+    }
 	if bucket == nil {
 		bucket = &rateBucket{tokens: burst, last: now, lastAccess: now}
 		l.buckets[key] = bucket
@@ -84,7 +91,10 @@ func (l *RateLimiter) ShouldReport(key string, interval time.Duration) bool {
 	if previous, ok := l.lastReport[key]; ok && now.Sub(previous) < interval {
 		return false
 	}
-	l.lastReport[key] = now
+	if len(l.lastReport) >= maxTrackedClientBuckets {
+        return false
+    }
+    l.lastReport[key] = now
 	return true
 }
 
@@ -101,18 +111,25 @@ func rateLimitMiddleware(limiter *RateLimiter, sink SecurityEventSink, resolveCl
 			ip = remoteIP(r)
 		}
 		rate, burst, bucketName := 20.0, 40.0, "general"
-		switch {
-		case strings.Contains(r.URL.Path, "/auth/"):
-			rate, burst, bucketName = 0.5, 8, "auth"
-		case strings.Contains(r.URL.Path, "/media/images") && r.Method == http.MethodPost:
-			rate, burst, bucketName = 0.25, 5, "upload"
-		case strings.Contains(r.URL.Path, "/messages") && r.Method == http.MethodPost:
-			rate, burst, bucketName = 3, 12, "message"
-		case r.URL.Path == "/api/v1/realtime/ticket":
-			rate, burst, bucketName = 1, 5, "realtime-ticket"
-		case r.URL.Path == "/api/v1/growth/events" && r.Method == http.MethodPost:
-			rate, burst, bucketName = 1, 10, "growth"
-		}
+        switch {
+        case r.URL.Path == "/api/v1/auth/email/start":
+            // Preserve strict anti-enumeration / SMTP abuse rate limits.
+            rate,burst,bucketName=0.5,8,"auth-start"
+        case r.URL.Path == "/api/v1/auth/refresh" || r.URL.Path == "/api/v1/auth/session":
+            // Frequent session reads and refreshes from users behind one
+            // office NAT must not exhaust the login-attempt budget.
+            rate,burst,bucketName=20,80,"auth-session"
+        case strings.HasPrefix(r.URL.Path,"/api/v1/auth/"):
+            rate,burst,bucketName=2,20,"auth-login"
+        case strings.Contains(r.URL.Path, "/media/images") && r.Method == http.MethodPost:
+            rate,burst,bucketName=0.25,5,"upload"
+        case strings.Contains(r.URL.Path, "/messages") && r.Method == http.MethodPost:
+            rate,burst,bucketName=12,48,"message"
+        case r.URL.Path == "/api/v1/realtime/ticket":
+            rate,burst,bucketName=5,30,"realtime-ticket"
+        case r.URL.Path == "/api/v1/growth/events" && r.Method == http.MethodPost:
+            rate,burst,bucketName=1,10,"growth"
+        }
 		key := bucketName + ":" + ip
 		allowed, retryAfter := limiter.Allow(key, rate, burst)
 		if !allowed {

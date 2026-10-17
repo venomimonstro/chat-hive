@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+    "strconv"
 	"testing"
 )
 
@@ -149,4 +150,34 @@ func TestRequestIDRejectsUntrustedLogCharacters(t *testing.T) {
 		if tc.valid && got != tc.input { t.Fatalf("valid ID was replaced: %q", got) }
 		if !tc.valid && got == tc.input { t.Fatalf("unsafe ID was accepted: %q", got) }
 	}
+}
+
+func TestSharedIPSessionTrafficDoesNotBurnEmailStartBudget(t *testing.T) {
+    limiter:=NewRateLimiter()
+    server:=rateLimitMiddleware(limiter,nil,remoteIP,http.HandlerFunc(
+        func(w http.ResponseWriter,_ *http.Request){w.WriteHeader(http.StatusNoContent)}))
+    for i:=0;i<35;i++ {
+        req:=httptest.NewRequest(http.MethodGet,"/api/v1/auth/session",nil)
+        req.RemoteAddr="203.0.113.42:44444"
+        rec:=httptest.NewRecorder()
+        server.ServeHTTP(rec,req)
+        if rec.Code!=http.StatusNoContent { t.Fatalf("session burst blocked at %d: %d",i,rec.Code) }
+    }
+    // Still limited independently after session traffic.
+    req:=httptest.NewRequest(http.MethodPost,"/api/v1/auth/email/start",nil)
+    req.RemoteAddr="203.0.113.42:44444"
+    for i:=0;i<10;i++ {
+        rec:=httptest.NewRecorder();server.ServeHTTP(rec,req)
+        if i==9 && rec.Code!=http.StatusTooManyRequests {t.Fatal("email login start should still be rate-limited")}
+    }
+}
+func TestRateLimiterHasHardMemoryCeiling(t *testing.T) {
+    limiter:=NewRateLimiter()
+    for i:=0;i<maxTrackedClientBuckets+3;i++ {
+        key:=strconv.Itoa(i)
+        limiter.Allow(key,1,1)
+    }
+    if len(limiter.buckets)>maxTrackedClientBuckets {
+        t.Fatalf("unbounded number of buckets: %d",len(limiter.buckets))
+    }
 }
