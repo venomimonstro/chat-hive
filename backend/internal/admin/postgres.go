@@ -275,6 +275,14 @@ func (s *PostgresStore) ProductMetrics(ctx context.Context, days int) (ProductMe
 			SELECT s.user_id,s.last_seen_at
 			FROM sessions s,bounds b
 			WHERE s.last_seen_at>=b.now_at-make_interval(days => $1 + 8)
+			UNION ALL
+			-- A mutable last_seen_at hides earlier re-logins when the same
+			-- session is later refreshed. Preserve a durable authenticated
+			-- visit timestamp from the append-only security event stream.
+			SELECT e.user_id,e.created_at
+			FROM security_events e,bounds b
+			WHERE e.event_type='session_created' AND e.user_id IS NOT NULL
+			  AND e.created_at>=b.now_at-make_interval(days => $1 + 8)
 		),
 		d1_cohort AS (
 			SELECT u.id,u.created_at
