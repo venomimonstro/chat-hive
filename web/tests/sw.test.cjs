@@ -46,12 +46,8 @@ test('API and cross-origin requests are never cached even as subresources', () =
   }
 });
 
-test('notification navigation rejects off-site and protocol-relative URLs', () => {
-  const { context } = worker();
-  for (const path of ['https://outside.example', '//outside.example/path', '/\\outside.example']) {
-    context.value = path;
-    assert.equal(vm.runInContext('safeNotificationPath(value)', context), '/notifications');
-  }
-  context.value = '/?chat=123';
-  assert.equal(vm.runInContext('safeNotificationPath(value)', context), '/?chat=123');
+test('no future push notifications can disclose private chat details in core', () => {
+  const { handlers } = worker();
+  assert.equal(handlers.has('push'), false);
+  assert.equal(handlers.has('notificationclick'), false);
 });

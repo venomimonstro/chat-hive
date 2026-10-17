@@ -1,5 +1,5 @@
 // Static assets only: never persist authenticated navigations or user data.
-const CACHE_NAME = 'chat-static-v2';
+const CACHE_NAME = 'chat-static-v3';
 const ASSETS = ['/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -41,42 +41,6 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-function safeNotificationPath(value) {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) {
-    return '/notifications';
-  }
-  try {
-    const url = new URL(value, self.location.origin);
-    return url.origin === self.location.origin ? url.pathname + url.search + url.hash : '/notifications';
-  } catch {
-    return '/notifications';
-  }
-}
-
-self.addEventListener('push', (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
-  const title = typeof data.title === 'string' && data.title ? data.title : 'CHAT';
-  event.waitUntil(self.registration.showNotification(title, {
-    body: typeof data.body === 'string' ? data.body : 'Новое событие в CHAT',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
-    tag: typeof data.tag === 'string' ? data.tag : undefined,
-    data: { url: safeNotificationPath(data.url) }
-  }));
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const target = safeNotificationPath(event.notification.data?.url);
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ('focus' in client) {
-          return client.navigate(target).then(() => client.focus());
-        }
-      }
-      return self.clients.openWindow(target);
-    })
-  );
-});
+// Push alerts and notification deep links are intentionally not registered in
+// the private-text-only core release. Reintroduce them only with explicit
+// consent, message-content redaction and fresh privacy/security review.
