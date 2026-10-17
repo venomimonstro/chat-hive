@@ -135,8 +135,13 @@ func operationalGateMiddleware(gate OperationalGate, logger *slog.Logger, next h
 		enabled, err := gate.Enabled(ctx, key)
 		cancel()
 		if err != nil {
+            // Operational kill switches protect risky features. A backend
+            // outage must not turn a disabled capability back on.
 			logger.Warn("operational flag lookup failed", "key", key, "error", err)
-			next.ServeHTTP(w, r)
+            w.Header().Set("Retry-After", "30")
+            writeJSON(w,http.StatusServiceUnavailable,map[string]any{
+                "error":map[string]string{"code":"feature_gate_unavailable","message":"Feature temporarily unavailable"},
+            })
 			return
 		}
 		if !enabled {
