@@ -42,6 +42,21 @@ BACKUP="$(find "$WORK/backups" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -pri
   sha256sum -c media.tar.gz.sha256 )
 sh "$ROOT/ops/backup/verify.sh" "$BACKUP"
 
+# Missing media must fail without creating a promoted backup.
+mkdir -p "$WORK/no-media-backups"
+export CHAT_BACKUP_DIR="$WORK/no-media-backups"
+export CHAT_MEDIA_ROOT="$WORK/nonexistent-media"
+unset CHAT_BACKUP_ALLOW_MISSING_MEDIA || true
+if bash "$ROOT/ops/backup/backup.sh" > "$WORK/missing-media.log" 2>&1; then
+  echo "Incomplete backup unexpectedly succeeded with missing media" >&2
+  exit 1
+fi
+[ -z "$(find "$WORK/no-media-backups" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print -quit)" ] || {
+  echo "Incomplete backup was promoted" >&2; exit 1;
+}
+export CHAT_BACKUP_DIR="$WORK/backups"
+export CHAT_MEDIA_ROOT="$WORK/media"
+
 # Two backups with the same timestamp must never overwrite the first one.
 if bash "$ROOT/ops/backup/backup.sh" > "$WORK/second.log" 2>&1; then
   echo 'Backup collision unexpectedly overwrote an immutable snapshot' >&2

@@ -16,7 +16,8 @@ A backup is not considered valid until integrity verification and a restore dril
 Required environment:
 
 - `DATABASE_URL`
-- optional `CHAT_MEDIA_ROOT`
+- optional `CHAT_MEDIA_ROOT` (defaults to `./var/media`, but the directory must exist)
+- `CHAT_BACKUP_ALLOW_MISSING_MEDIA=1` only when you have verified this deployment has no media files
 - optional `CHAT_BACKUP_DIR`
 
 Run:

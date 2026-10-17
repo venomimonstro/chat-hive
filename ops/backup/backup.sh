@@ -6,6 +6,7 @@ umask 077
 : "${DATABASE_URL:?DATABASE_URL is required}"
 BACKUP_DIR="${CHAT_BACKUP_DIR:-./backups}"
 MEDIA_ROOT="${CHAT_MEDIA_ROOT:-./var/media}"
+ALLOW_MISSING_MEDIA="${CHAT_BACKUP_ALLOW_MISSING_MEDIA:-0}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 # A timestamp identifies one immutable backup. An atomic lock prevents two
@@ -38,6 +39,10 @@ pg_restore --list "$TMP/postgres.dump" >/dev/null
 # promotion the temporary directory no longer exists.
 (cd "$TMP" && sha256sum postgres.dump > postgres.dump.sha256)
 
+if [ ! -d "$MEDIA_ROOT" ] && [ "$ALLOW_MISSING_MEDIA" != "1" ]; then
+  echo "Media directory is missing; refusing incomplete backup: $MEDIA_ROOT (set CHAT_BACKUP_ALLOW_MISSING_MEDIA=1 only for a verified media-free deployment)" >&2
+  exit 1
+fi
 if [ -d "$MEDIA_ROOT" ]; then
   printf '%s\n' "Creating media backup..."
   tar -C "$MEDIA_ROOT" -czf "$TMP/media.tar.gz" .
