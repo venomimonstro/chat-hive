@@ -16,8 +16,9 @@ function harness() {
   const sockets = [], events = [], timers = new Map();
   let nextTimer = 1, now = 0;
   class FakeWebSocket {
+    static CONNECTING = 0;
     static OPEN = 1;
-    readyState = 1;
+    readyState = 0;
     sent = [];
     closes = [];
     constructor(url) { this.url = url; sockets.push(this); }
@@ -65,6 +66,7 @@ test('missing pongs force a reconnect instead of leaving a stale connected socke
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(env.sockets.length, 1);
   const socket = env.sockets[0];
+  socket.readyState = 1;
   socket.onopen();
   env.advance(25_000);
   assert.equal(socket.sent.length, 1);
@@ -80,6 +82,7 @@ test('pongs and ready packets are not broadcast as chat events', async () => {
   env.client.start();
   await new Promise((resolve) => setImmediate(resolve));
   const socket = env.sockets[0];
+  socket.readyState = 1;
   socket.onopen();
   socket.onmessage({ data: JSON.stringify({ type: 'ready' }) });
   env.advance(30_000);
@@ -88,5 +91,21 @@ test('pongs and ready packets are not broadcast as chat events', async () => {
   assert.equal(socket.closes.length, 0);
   socket.onmessage({ data: JSON.stringify({ type: 'message.created', chat_id: 'x' }) });
   assert.equal(env.events.filter((event) => event.type === 'chat:realtime').length, 1);
+  env.client.stop();
+});
+
+test('a stuck WebSocket handshake is closed and reconnect scheduled', async () => {
+  const env = harness();
+  env.client.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(env.sockets.length, 1);
+  const socket = env.sockets[0];
+  assert.equal(socket.readyState, 0);
+  const timer = Array.from(env.timers.values()).find((entry) => entry.kind === 'timeout');
+  assert.ok(timer, 'handshake watchdog must be scheduled');
+  timer.callback();
+  assert.equal(socket.closes[0]?.reason, 'handshake timeout');
+  assert.ok(Array.from(env.timers.values()).some((entry) => entry.kind === 'timeout'),
+    'reconnect must be scheduled after a timed-out handshake');
   env.client.stop();
 });

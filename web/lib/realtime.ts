@@ -47,6 +47,7 @@ export class RealtimeClient {
   private reconnectAttempt = 0;
   private reconnectTimer: number | null = null;
   private pingTimer: number | null = null;
+  private openTimer: number | null = null;
 
   start() {
     if (!this.stopped && (this.socket || this.connecting || this.reconnectTimer !== null)) return;
@@ -61,8 +62,10 @@ export class RealtimeClient {
     this.reconnectAttempt = 0;
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
     if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
+    if (this.openTimer !== null) window.clearTimeout(this.openTimer);
     this.reconnectTimer = null;
     this.pingTimer = null;
+    this.openTimer = null;
     this.socket?.close(1000, 'client shutdown');
     this.socket = null;
     window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: false }));
@@ -94,8 +97,18 @@ export class RealtimeClient {
     }
     this.socket = socket;
     let lastPongAt = Date.now();
+    // An unresolved WebSocket handshake must not block reconnection forever.
+    // The browser can leave CONNECTING stuck when an intermediate proxy dies.
+    this.openTimer = window.setTimeout(() => {
+      this.openTimer = null;
+      if (!this.stopped && this.socket === socket && socket.readyState === WebSocket.CONNECTING) {
+        socket.close(4000, 'handshake timeout');
+      }
+    }, 15_000);
 
     socket.onopen = () => {
+      if (this.openTimer !== null) window.clearTimeout(this.openTimer);
+      this.openTimer = null;
       if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
       window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
       this.reconnectAttempt = 0;
@@ -131,6 +144,8 @@ export class RealtimeClient {
 
     socket.onclose = () => {
       if (this.socket !== socket) return;
+      if (this.openTimer !== null) window.clearTimeout(this.openTimer);
+      this.openTimer = null;
       this.socket = null;
       window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: false }));
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
