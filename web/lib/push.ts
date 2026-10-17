@@ -68,6 +68,11 @@ export async function disablePush() {
   if (!subscription) return;
   const endpoint = subscription.endpoint;
   const response = await authRequest('/api/v1/notifications/push-subscription', { method: 'DELETE', body: JSON.stringify({ endpoint }) });
-  if (response && !response.ok && response.status !== 404) throw new Error('Не удалось отключить push-уведомления');
-  await subscription.unsubscribe();
+  // Do not unsubscribe only in the browser if the backend has not revoked
+  // the stored endpoint. Otherwise the UI would claim success while the
+  // account still has an active server-side notification subscription.
+  if (!response) throw new Error('Для отключения push-уведомлений необходимо войти в аккаунт');
+  if (!response.ok && response.status !== 404) throw new Error('Не удалось отключить push-уведомления');
+  const unsubscribed = await subscription.unsubscribe();
+  if (!unsubscribed) throw new Error('Не удалось удалить push-подписку из браузера');
 }
