@@ -2,6 +2,9 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 const ACCESS_KEY = 'chat_access_token';
+// Increment on explicit login, logout and successful rotations so an older
+// in-flight refresh cannot resurrect credentials after an account switch.
+let credentialGeneration = 0;
 
 type SessionPayload = {
   user_id: string;
@@ -96,6 +99,7 @@ export function getAccessToken() {
 }
 
 export function setAccessToken(token: string | null) {
+  credentialGeneration += 1;
   if (typeof window === 'undefined') return;
   if (token) window.sessionStorage.setItem(ACCESS_KEY, token);
   else window.sessionStorage.removeItem(ACCESS_KEY);
@@ -158,10 +162,14 @@ let pendingRefresh: Promise<SessionPayload | null> | null = null;
 
 export function refreshSession(): Promise<SessionPayload | null> {
   if (pendingRefresh) return pendingRefresh;
+  const expectedGeneration = credentialGeneration;
   const rotate = async (): Promise<SessionPayload | null> => {
     const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: 'POST', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store'
     });
+    // A different login/logout happened while this cookie rotation was
+    // pending. Do not overwrite its local credentials with stale results.
+    if (credentialGeneration !== expectedGeneration) return null;
     if (response.status === 401 || response.status === 403) {
       setAccessToken(null);
       return null;
@@ -170,6 +178,7 @@ export function refreshSession(): Promise<SessionPayload | null> {
     // the app can recover without discarding a legitimate user's session.
     if (!response.ok) throw new Error('Сервис авторизации временно недоступен');
     const payload = await response.json() as SessionPayload;
+    if (credentialGeneration !== expectedGeneration) return null;
     setAccessToken(payload.access_token);
     return payload;
   };

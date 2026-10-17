@@ -101,3 +101,36 @@ test('incomplete onboarding profile remains a valid API response', async () => {
   assert.equal(result.completed, false);
   assert.equal(result.user_id, profile.user_id);
 });
+
+test('logout while refresh is in flight never restores an old access token', async () => {
+  let finish;
+  const app = createApp(() => new Promise((resolve) => { finish = resolve; }));
+  app.setAccessToken('old');
+  const pending = app.refreshSession();
+  app.setAccessToken(null);
+  finish({ status: 200, ok: true, json: async () => ({ access_token: 'stale' }) });
+  assert.equal(await pending, null);
+  assert.equal(app.getAccessToken(), null);
+});
+
+test('account switch during refresh is not overwritten by an old account', async () => {
+  let finish;
+  const app = createApp(() => new Promise((resolve) => { finish = resolve; }));
+  app.setAccessToken('old-account');
+  const pending = app.refreshSession();
+  app.setAccessToken('new-account');
+  finish({ status: 200, ok: true, json: async () => ({ access_token: 'old-account-rotated' }) });
+  assert.equal(await pending, null);
+  assert.equal(app.getAccessToken(), 'new-account');
+});
+
+test('stale unauthorized refresh cannot clear a newer session', async () => {
+  let finish;
+  const app = createApp(() => new Promise((resolve) => { finish = resolve; }));
+  app.setAccessToken('old-account');
+  const pending = app.refreshSession();
+  app.setAccessToken('new-account');
+  finish({ status: 401, ok: false });
+  assert.equal(await pending, null);
+  assert.equal(app.getAccessToken(), 'new-account');
+});
