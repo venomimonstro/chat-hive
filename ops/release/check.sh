@@ -9,6 +9,7 @@ info() { printf '==> %s\n' "$*"; }
 
 info "running backup artifact smoke tests"
 bash ops/backup/test_backup_smoke.sh
+bash ops/backup/test_install_timer.sh
 
 info "running offline media archive safety tests"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required for safe media verification"

@@ -38,13 +38,14 @@ func main() {
 	ticketRate := flag.Float64("ticket-rate", 0, "global WebSocket tickets per second, 0 for unpaced benchmarking")
 	wsHold := flag.Duration("ws-hold", 10*time.Second, "hold and actively ping each websocket for this duration")
 	minPeak := flag.Int("min-peak", 0, "minimum concurrent active WebSocket connections required")
+	maxP95 := flag.Duration("max-p95", 0, "maximum permitted p95 latency; 0 for measurement only")
 	flag.Parse()
 	if *requests <= 0 || *concurrency <= 0 || *concurrency > 10000 || *reconnectRounds <= 0 {
 		fatal("requests, concurrency and reconnect-rounds must be positive; concurrency <= 10000")
 	}
 	if *messageRate < 0 || *messageRate > 1000 || (*messageRate > 0 && *messageRate < 0.01) ||
 		*ticketRate < 0 || *ticketRate > 1000 || (*ticketRate > 0 && *ticketRate < 0.01) ||
-		*wsHold <= 0 || *minPeak < 0 || *minPeak > *concurrency {
+		*wsHold <= 0 || *minPeak < 0 || *minPeak > *concurrency || *maxP95 < 0 {
 		fatal("invalid pacing/hold/peak flags")
 	}
 	if _, err := url.ParseRequestURI(*base); err != nil {
@@ -56,25 +57,25 @@ func main() {
 
 	switch *mode {
 	case "health":
-		runHTTP(*base+"/health/live", http.MethodGet, "", "", *requests, *concurrency)
+		runHTTP(*base+"/health/live", http.MethodGet, "", "", *requests, *concurrency, *maxP95)
 	case "messages":
 		if access == "" || chatID == "" { fatal("CHAT_LOAD_ACCESS_TOKEN and CHAT_LOAD_CHAT_ID are required") }
-		runMessageBurst(*base, access, chatID, *requests, *concurrency, *messageRate)
+		runMessageBurst(*base, access, chatID, *requests, *concurrency, *messageRate, *maxP95)
 	case "websocket":
 		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
-		runWebSockets(*base, access, *concurrency, *ticketRate, *wsHold, *minPeak)
+		runWebSockets(*base, access, *concurrency, *ticketRate, *wsHold, *minPeak, *maxP95)
 	case "reconnect":
 		if access == "" { fatal("CHAT_LOAD_ACCESS_TOKEN is required") }
-		runReconnectStorm(*base, access, *concurrency, *reconnectRounds, *ticketRate)
+		runReconnectStorm(*base, access, *concurrency, *reconnectRounds, *ticketRate, *maxP95)
 	default:
 		fatal("unknown mode")
 	}
 }
 
-func runHTTP(target, method, token, body string, total, concurrency int) {
+func runHTTP(target, method, token, body string, total, concurrency int, maxP95 time.Duration) {
 	jobs := make(chan struct{})
 	results := make(chan result, total)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	var wg sync.WaitGroup
 	started := time.Now()
 	for i := 0; i < concurrency; i++ {
@@ -95,13 +96,13 @@ func runHTTP(target, method, token, body string, total, concurrency int) {
 		}()
 	}
 	go func(){ for i:=0;i<total;i++{jobs<-struct{}{}};close(jobs);wg.Wait();close(results) }()
-	printResults(results,total,started)
+	printResults(results,total,started,maxP95)
 }
 
-func runMessageBurst(base, token, chatID string, total, concurrency int, rate float64) {
+func runMessageBurst(base, token, chatID string, total, concurrency int, rate float64, maxP95 time.Duration) {
 	jobs := make(chan int)
 	results := make(chan result,total)
-	client:=&http.Client{Timeout:10*time.Second}
+	client:=&http.Client{Timeout:10*time.Second,CheckRedirect:func(*http.Request,[]*http.Request)error{return http.ErrUseLastResponse}}
 	var wg sync.WaitGroup
 	started:=time.Now()
 	for i:=0;i<concurrency;i++{
@@ -126,13 +127,13 @@ func runMessageBurst(base, token, chatID string, total, concurrency int, rate fl
 		stop()
 		close(jobs);wg.Wait();close(results)
 	}()
-	printResults(results,total,started)
+	printResults(results,total,started,maxP95)
 }
 
 // runWebSockets verifies ACTUAL simultaneous connections: tickets are paced
 // to avoid the auth limiter, and connections stay open long enough to overlap.
 // Heartbeat round-trips detect a server that disconnects idle sockets.
-func runWebSockets(base, token string, count int, rate float64, hold time.Duration, minPeak int) {
+func runWebSockets(base, token string, count int, rate float64, hold time.Duration, minPeak int, maxP95 time.Duration) {
 	type wsResult struct { connect time.Duration; err error }
 	results:=make(chan wsResult,count)
 	started:=time.Now()
@@ -197,10 +198,10 @@ func runWebSockets(base, token string, count int, rate float64, hold time.Durati
 	fmt.Printf("websocket connections=%d successful=%d failed=%d peak=%d wall=%s",count,len(latencies),failures,peak.Load(),time.Since(started))
 	if len(latencies)>0 {fmt.Printf(" p50=%s p95=%s p99=%s",percentile(latencies,.50),percentile(latencies,.95),percentile(latencies,.99))}
 	fmt.Println()
-	if failures>0 || len(latencies)!=count || int(peak.Load())<minPeak {fatal(fmt.Sprintf("websocket capacity gate failed: failures=%d peak=%d required=%d",failures,peak.Load(),minPeak))}
+	if failures>0 || len(latencies)!=count || int(peak.Load())<minPeak || exceedsP95(latencies,maxP95) {fatal(fmt.Sprintf("websocket capacity gate failed: failures=%d peak=%d required=%d",failures,peak.Load(),minPeak))}
 }
 
-func runReconnectStorm(base, token string, workers, rounds int, rate float64) {
+func runReconnectStorm(base, token string, workers, rounds int, rate float64, maxP95 time.Duration) {
 	if workers <= 0 || rounds <= 0 { fatal("concurrency and reconnect-rounds must be positive") }
 	total := workers * rounds
 	type wsResult struct{ duration time.Duration; err error }
@@ -255,7 +256,7 @@ func runReconnectStorm(base, token string, workers, rounds int, rate float64) {
 		fmt.Printf(" p50=%s p95=%s p99=%s", percentile(latencies,.50), percentile(latencies,.95), percentile(latencies,.99))
 	}
 	fmt.Println()
-	if failures > 0 { os.Exit(1) }
+	if failures > 0 || len(latencies)!=total || exceedsP95(latencies,maxP95) { os.Exit(1) }
 }
 
 // newPacer limits issuance without confusing intentional queue time with
@@ -307,7 +308,7 @@ func summarizeResults(results <-chan result, total int, started time.Time) (time
 	return wall, latencies, statuses, failures, bad
 }
 
-func printResults(results <-chan result, total int, started time.Time) {
+func printResults(results <-chan result, total int, started time.Time, maxP95 time.Duration) {
 	wall, latencies, statuses, failures, bad := summarizeResults(results, total, started)
 	rps := float64(0)
 	if wall > 0 {
@@ -318,11 +319,15 @@ func printResults(results <-chan result, total int, started time.Time) {
 		fmt.Printf(" p50=%s p95=%s p99=%s", percentile(latencies, .50), percentile(latencies, .95), percentile(latencies, .99))
 	}
 	fmt.Println()
-	if bad {
-		fmt.Fprintln(os.Stderr, "load test failed: transport error, incomplete requests or unexpected HTTP status")
+	if bad || exceedsP95(latencies,maxP95) {
+		fmt.Fprintln(os.Stderr, "load test failed: transport error, incomplete requests, HTTP status or p95 latency budget")
 		os.Exit(1)
 	}
 }
+func exceedsP95(samples []time.Duration, threshold time.Duration) bool {
+	return threshold > 0 && (len(samples)==0 || percentile(samples,.95)>threshold)
+}
+
 func percentile(values []time.Duration,p float64)time.Duration{if len(values)==0{return 0};index:=int(float64(len(values)-1)*p);if index<0{index=0};if index>=len(values){index=len(values)-1};return values[index]}
 func newUUID()string{raw:=make([]byte,16);if _,err:=rand.Read(raw);err!=nil{panic(err)};raw[6]=(raw[6]&0x0f)|0x40;raw[8]=(raw[8]&0x3f)|0x80;value:=hex.EncodeToString(raw);return value[0:8]+"-"+value[8:12]+"-"+value[12:16]+"-"+value[16:20]+"-"+value[20:32]}
 func env(key,fallback string)string{if value:=strings.TrimSpace(os.Getenv(key));value!=""{return value};return fallback}

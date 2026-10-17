@@ -82,7 +82,7 @@ CHAT_ALPHA_URL="$ALPHA_URL" CHAT_ALPHA_ACCESS_TOKEN="$ACCESS_TOKEN" sh ops/alpha
 step "3/6 health load"
 (
   cd backend
-  go run ./cmd/loadtest -mode health -base "$ALPHA_URL" -requests 1000 -concurrency 50
+  go run ./cmd/loadtest -mode health -base "$ALPHA_URL" -requests 1000 -concurrency 50 -max-p95 "${CHAT_ALPHA_HEALTH_MAX_P95:-0s}"
 )
 
 step "4/6 message write load"
@@ -90,17 +90,17 @@ step "4/6 message write load"
   cd backend
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" CHAT_LOAD_CHAT_ID="$CHAT_ID" \
     go run ./cmd/loadtest -mode messages -base "$ALPHA_URL" \
-      -requests "$MESSAGE_REQUESTS" -concurrency "$MESSAGE_CONCURRENCY" -message-rate 2
+      -requests "$MESSAGE_REQUESTS" -concurrency "$MESSAGE_CONCURRENCY" -message-rate 2 -max-p95 "${CHAT_ALPHA_MESSAGE_MAX_P95:-0s}"
 )
 
 step "5/6 realtime connection and reconnect validation"
 (
   cd backend
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
-    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY" -ticket-rate 0.75 -ws-hold "${WS_HOLD_SECONDS}s" -min-peak "$WS_CONCURRENCY"
+    go run ./cmd/loadtest -mode websocket -base "$ALPHA_URL" -concurrency "$WS_CONCURRENCY" -ticket-rate 0.75 -ws-hold "${WS_HOLD_SECONDS}s" -min-peak "$WS_CONCURRENCY" -max-p95 "${CHAT_ALPHA_WS_MAX_P95:-0s}"
   CHAT_LOAD_ACCESS_TOKEN="$ACCESS_TOKEN" \
     go run ./cmd/loadtest -mode reconnect -base "$ALPHA_URL" \
-      -concurrency "$RECONNECT_WORKERS" -reconnect-rounds "$RECONNECT_ROUNDS" -ticket-rate 0.75
+      -concurrency "$RECONNECT_WORKERS" -reconnect-rounds "$RECONNECT_ROUNDS" -ticket-rate 0.75 -max-p95 "${CHAT_ALPHA_RECONNECT_MAX_P95:-0s}"
 )
 
 step "6/6 isolated restore drill"

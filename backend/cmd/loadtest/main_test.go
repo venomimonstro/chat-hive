@@ -29,3 +29,11 @@ func TestSummarizeResultsFailsClosedOnIncompleteOrHTTPError(t *testing.T) {
         t.Fatalf("unexpected incomplete/error state: bad=%v failures=%d completed=%d", bad, failures, len(latency))
     }
 }
+
+func TestP95Budget(t *testing.T) {
+	values:=[]time.Duration{10*time.Millisecond,20*time.Millisecond,40*time.Millisecond,90*time.Millisecond}
+	if exceedsP95(values,100*time.Millisecond) { t.Fatal("p95 false positive") }
+	if !exceedsP95(values,15*time.Millisecond) { t.Fatal("p95 threshold bypassed") }
+	if exceedsP95(values,0) { t.Fatal("zero disables threshold") }
+	if !exceedsP95(nil,time.Second) { t.Fatal("positive threshold must fail without data") }
+}
