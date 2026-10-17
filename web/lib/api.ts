@@ -152,17 +152,27 @@ export async function startYandexLogin(): Promise<string> {
   return payload.authorization_url;
 }
 
-export async function refreshSession(): Promise<SessionPayload | null> {
-  const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-    method: 'POST', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store'
-  });
-  if (!response.ok) {
-    setAccessToken(null);
-    return null;
-  }
-  const payload = await response.json() as SessionPayload;
-  setAccessToken(payload.access_token);
-  return payload;
+// Refresh tokens rotate on every use. Concurrent API calls must share one
+// refresh request or the second request can trigger replay revocation.
+let pendingRefresh: Promise<SessionPayload | null> | null = null;
+
+export function refreshSession(): Promise<SessionPayload | null> {
+  if (pendingRefresh) return pendingRefresh;
+  const ongoing = (async (): Promise<SessionPayload | null> => {
+    const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: 'POST', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store'
+    });
+    if (!response.ok) {
+      setAccessToken(null);
+      return null;
+    }
+    const payload = await response.json() as SessionPayload;
+    setAccessToken(payload.access_token);
+    return payload;
+  })();
+  pendingRefresh = ongoing;
+  void ongoing.finally(() => { if (pendingRefresh === ongoing) pendingRefresh = null; }).catch(() => undefined);
+  return ongoing;
 }
 
 export async function getCurrentSession() {

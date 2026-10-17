@@ -7,7 +7,7 @@ import { Button, Surface } from '../../components/ui';
 import { getAccessToken, refreshSession } from '../../lib/api';
 import { disablePush, enablePush, pushAvailable } from '../../lib/push';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 type NotificationItem = {
   id: string;
@@ -42,7 +42,9 @@ async function authFetch(path: string, init: RequestInit = {}) {
 function notificationHref(item: NotificationItem) {
   if (item.entity_type === 'chat') return `/?chat=${encodeURIComponent(item.entity_id)}`;
   if (item.entity_type === 'post') return `/post/${encodeURIComponent(item.entity_id)}`;
-  if (item.entity_type === 'channel') return `/channels/${encodeURIComponent(item.entity_id)}`;
+  // The notification holds a channel UUID, not its public slug.
+  // Use the channel catalog until a UUID-to-slug resolution endpoint exists.
+  if (item.entity_type === 'channel') return '/channels';
   if (item.entity_type === 'user' && item.actor_username) return `/u/${encodeURIComponent(item.actor_username)}`;
   return '/';
 }
