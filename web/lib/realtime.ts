@@ -58,7 +58,6 @@ export class RealtimeClient {
     this.stopped = true;
     this.connectionAttempt += 1;
     this.connecting = false;
-    this.connectedAtLeastOnce = false;
     this.reconnectAttempt = 0;
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
     if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
@@ -96,7 +95,6 @@ export class RealtimeClient {
 
     socket.onopen = () => {
       if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
-      this.connectedAtLeastOnce = true;
       this.reconnectAttempt = 0;
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => {

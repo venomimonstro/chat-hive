@@ -277,11 +277,13 @@ export function ChatsClient() {
     setOlderLoading(true);
     try {
       const items = await listMessages(selected.chat_id, first.sequence, PAGE_SIZE);
+      if (selectedIdRef.current !== selected.chat_id) return;
       const ordered = [...items].reverse();
       setMessages((current) => [...ordered, ...current]);
       setHasOlder(items.length === PAGE_SIZE);
       void loadReactions(ordered);
     } catch (err) {
+      if (selectedIdRef.current !== selected.chat_id) return;
       setError(err instanceof Error ? err.message : 'Не удалось загрузить старые сообщения');
     } finally {
       setOlderLoading(false);
@@ -313,10 +315,14 @@ export function ChatsClient() {
       if (!session || session.user_id !== item.user_id) throw new Error('Account changed');
       const result = await sendTextMessage(item.chat_id, item.body, item.client_message_id, item.reply_to_id ?? '');
       await removeOutbox(item.user_id, item.client_message_id);
-      setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
+      if (selectedIdRef.current === item.chat_id) {
+        setMessages((current) => [...current.filter((message) => message.client_message_id !== item.client_message_id), result.message].sort((a, b) => a.sequence - b.sequence));
+      }
       await refreshChats();
     } catch {
-      setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'failed' } : message));
+      if (selectedIdRef.current === item.chat_id) {
+        setMessages((current) => current.map((message) => message.client_message_id === item.client_message_id ? { ...message, local_status: 'failed' } : message));
+      }
     } finally {
       sendingIdsRef.current.delete(item.client_message_id);
     }
