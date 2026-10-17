@@ -122,3 +122,8 @@ and accepts `CHAT_ALPHA_MAX_BACKUP_AGE_SECONDS` to impose a stricter policy.
 This is a freshness check (the worst-case loss interval since the snapshot),
 **not proof of transaction-level RPO**. A successful restore is still required.
 
+
+The backup script rejects symlinked media roots and rejects layouts in which the
+backup destination and the media root contain one another. This prevents
+recursive self-archiving, disk exhaustion, and accidentally backing up files
+outside the intended media directory. These checks run **before** pg_dump.

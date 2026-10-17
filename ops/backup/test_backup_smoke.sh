@@ -57,6 +57,24 @@ fi
 export CHAT_BACKUP_DIR="$WORK/backups"
 export CHAT_MEDIA_ROOT="$WORK/media"
 
+# A media archive must not recursively include the backup being produced.
+export CHAT_BACKUP_DIR="$WORK/media/nested-backups"
+export CHAT_MEDIA_ROOT="$WORK/media"
+if bash "$ROOT/ops/backup/backup.sh" > "$WORK/nested.log" 2>&1; then
+  echo 'Nested backup destination was accepted' >&2; exit 1
+fi
+[ -z "$(find "$WORK/media/nested-backups" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print -quit)" ] || {
+  echo 'Nested backup unexpectedly created a snapshot' >&2; exit 1;
+}
+ln -s "$WORK/media" "$WORK/symlink-media"
+export CHAT_BACKUP_DIR="$WORK/isolated-backups"
+export CHAT_MEDIA_ROOT="$WORK/symlink-media"
+if bash "$ROOT/ops/backup/backup.sh" > "$WORK/symlink.log" 2>&1; then
+  echo 'Symlinked media root was accepted' >&2; exit 1
+fi
+export CHAT_BACKUP_DIR="$WORK/backups"
+export CHAT_MEDIA_ROOT="$WORK/media"
+
 # Two backups with the same timestamp must never overwrite the first one.
 if bash "$ROOT/ops/backup/backup.sh" > "$WORK/second.log" 2>&1; then
   echo 'Backup collision unexpectedly overwrote an immutable snapshot' >&2

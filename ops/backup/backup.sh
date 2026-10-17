@@ -34,6 +34,23 @@ if [ ! -d "$MEDIA_ROOT" ] && [ "$ALLOW_MISSING_MEDIA" != "1" ]; then
   echo "Media directory is missing; refusing incomplete backup: $MEDIA_ROOT (set CHAT_BACKUP_ALLOW_MISSING_MEDIA=1 only for a verified media-free deployment)" >&2
   exit 1
 fi
+if [ -d "$MEDIA_ROOT" ]; then
+  command -v realpath >/dev/null 2>&1 || { echo "realpath is required to validate backup layout" >&2; exit 2; }
+  MEDIA_REAL="$(realpath -m -- "$MEDIA_ROOT")"
+  MEDIA_LITERAL="$(realpath -ms -- "$MEDIA_ROOT")"
+  if [ "$MEDIA_REAL" != "$MEDIA_LITERAL" ] || [ "$MEDIA_REAL" = "/" ]; then
+    echo "Refusing media backup through a symlink or the filesystem root" >&2
+    exit 1
+  fi
+  # A backup stored under its own media input would archive itself as the
+  # tarball grows, eventually filling the disk. Keep both trees separate.
+  case "$BACKUP_DIR/" in
+    "$MEDIA_REAL/"*) echo "Refusing recursive backup: destination is inside media root" >&2; exit 1 ;;
+  esac
+  case "$MEDIA_REAL/" in
+    "$BACKUP_DIR/"*) echo "Media root must not live inside the backup destination" >&2; exit 1 ;;
+  esac
+fi
 TMP="$(mktemp -d "$BACKUP_DIR/.$STAMP.tmp.XXXXXX")"
 
 printf '%s\n' "Creating PostgreSQL backup..."
