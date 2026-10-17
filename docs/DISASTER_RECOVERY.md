@@ -56,7 +56,7 @@ Preferred automated drill:
 sh ops/backup/drill.sh ./backups/<timestamp>
 ```
 
-The drill starts a temporary PostgreSQL container without published ports, mounts the backup read-only, verifies checksums, restores the dump, checks critical durable tables and prints measured `rto_seconds`. The container is removed on exit.
+The drill starts a temporary PostgreSQL container without published ports, mounts the backup read-only, verifies checksums, restores the dump, checks critical durable tables, extracts the media archive into an isolated temporary directory, and verifies each ready `media_objects` database record against its actual file size and SHA-256. A backup missing referenced media fails. It prints measured `rto_seconds` and removes the temporary resources on exit.
 
 For a deeper manual drill with media restoration and an isolated application instance, never restore into the live database. Create an isolated PostgreSQL target and set:
 

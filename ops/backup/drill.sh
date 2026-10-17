@@ -15,6 +15,7 @@ command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit
 BACKUP_PATH="$(CDPATH= cd -- "$BACKUP_PATH" && pwd)"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 MEDIA_TMP=""
+MEDIA_ROWS=""
 NAME="chat-dr-drill-$$"
 DB="chat_restore_drill"
 USER="chatdrill"
@@ -24,6 +25,7 @@ STARTED="$(date +%s)"
 cleanup() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   if [ -n "$MEDIA_TMP" ]; then rm -rf -- "$MEDIA_TMP"; fi
+  if [ -n "$MEDIA_ROWS" ]; then rm -f -- "$MEDIA_ROWS"; fi
 }
 trap cleanup EXIT INT TERM
 
@@ -64,13 +66,22 @@ for table in users sessions chats messages security_events; do
   [ "$exists" = "t" ] || { echo "required table missing after restore: $table" >&2; exit 1; }
 done
 
+echo "[drill] comparing restored database media references with restored files"
+MEDIA_ROWS="$(mktemp)"
+docker exec "$NAME" psql -At -F '|' -v ON_ERROR_STOP=1 -U "$USER" -d "$DB" -c \
+  "SELECT storage_key,byte_size,encode(sha256,'hex') FROM media_objects WHERE state='ready' AND deleted_at IS NULL ORDER BY storage_key" > "$MEDIA_ROWS"
 MEDIA_FILES="not_in_backup"
 if [ -f "$BACKUP_PATH/media.tar.gz" ]; then
   echo "[drill] validating real media extraction in isolation"
   MEDIA_TMP="$(mktemp -d)"
   tar --no-same-owner --no-same-permissions -xzf "$BACKUP_PATH/media.tar.gz" -C "$MEDIA_TMP"
   MEDIA_FILES="$(find "$MEDIA_TMP" -type f | wc -l | tr -d ' ')"
+else
+  # If any active media rows exist, omitting media from the backup is data loss.
+  [ ! -s "$MEDIA_ROWS" ] || { echo "[drill] database references media, but media archive is absent" >&2; exit 1; }
+  MEDIA_TMP="$(mktemp -d)"
 fi
+python3 "$SCRIPT_DIR/check_restored_media.py" "$MEDIA_TMP" "$MEDIA_ROWS"
 FINISHED="$(date +%s)"
 RTO=$((FINISHED - STARTED))
 echo "[drill] PASS tables=$TABLES media_files=$MEDIA_FILES rto_seconds=$RTO image=$IMAGE"
