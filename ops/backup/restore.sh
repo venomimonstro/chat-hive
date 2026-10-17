@@ -20,11 +20,23 @@ fi
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 "$SCRIPT_DIR/verify.sh" "$BACKUP_PATH"
 
+# Never let an operator accidentally restore over the currently configured
+# primary database with a copy/paste of DATABASE_URL.
+if [ -n "${DATABASE_URL:-}" ] && [ "$RESTORE_DATABASE_URL" = "$DATABASE_URL" ]; then
+  echo 'Refusing restore: target database is identical to DATABASE_URL' >&2
+  exit 3
+fi
+
 # Validate all potentially destructive targets before changing the database.
 if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
   case "$RESTORE_MEDIA_ROOT" in /*) ;; *) echo 'Media restore requires an absolute path' >&2; exit 3 ;; esac
   command -v realpath >/dev/null 2>&1 || { echo 'realpath required for safe media restore' >&2; exit 3; }
   target="$(realpath -m -- "$RESTORE_MEDIA_ROOT")"
+  literal_target="$(realpath -ms -- "$RESTORE_MEDIA_ROOT")"
+  if [ "$target" != "$literal_target" ]; then
+    echo 'Refusing media restore through a symlinked parent directory' >&2
+    exit 3
+  fi
   case "$target" in
     /|/tmp|/home|/root|/var|/var/lib|/etc|/usr|/mnt|/srv|/opt)
       echo 'Refusing media restore into a system/shared directory' >&2; exit 3 ;;
