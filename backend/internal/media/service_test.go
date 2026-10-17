@@ -84,3 +84,39 @@ func TestUploadRemovesFileWhenMetadataFails(t *testing.T) {
 		t.Fatalf("orphan file remains: %d", len(entries))
 	}
 }
+
+func TestFileStorageDoesNotFollowSymlinkedMediaPrefix(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "ab")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	files := &FileStorage{root: root}
+	if err := files.Write("ab/abcdef.jpg", []byte("private")); !errors.Is(err, ErrInvalidImage) {
+		t.Fatalf("must reject symlinked write prefix, got %v", err)
+	}
+	if _, err := files.Open("ab/abcdef.jpg"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("must reject symlinked read prefix, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "abcdef.jpg")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("media storage wrote outside root: %v", err)
+	}
+}
+
+func TestFileStorageRejectsSymlinkedFile(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "private.jpg")
+	if err := os.WriteFile(outside, []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "ab", "abcdef.jpg")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	files := &FileStorage{root: root}
+	if _, err := files.Open("ab/abcdef.jpg"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("must reject symlinked media object, got %v", err)
+	}
+}

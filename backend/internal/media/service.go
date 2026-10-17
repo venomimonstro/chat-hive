@@ -80,6 +80,17 @@ func (s *FileStorage) safePath(key string) (string, error) {
 	if !strings.HasPrefix(path, s.root+string(os.PathSeparator)) {
 		return "", ErrInvalidImage
 	}
+	// A symlinked media root/prefix can redirect an otherwise safe storage key
+	// outside the intended storage volume.
+	for _, directory := range []string{s.root, filepath.Dir(path)} {
+		info, err := os.Lstat(directory)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+			return "", ErrInvalidImage
+		}
+	}
 	return path, nil
 }
 
@@ -89,6 +100,11 @@ func (s *FileStorage) Write(key string, data []byte) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	// Recheck after creating directories: never create temporary files through
+	// a symlinked prefix.
+	if _, err := s.safePath(key); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
@@ -112,7 +128,22 @@ func (s *FileStorage) Write(key string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// Sync directory metadata as well as file contents so a reported success
+	// survives a crash after rename but before the next filesystem journal flush.
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	defer directory.Close()
+	if err := directory.Sync(); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
 }
 
 func (s *FileStorage) Delete(key string) error {
@@ -129,6 +160,10 @@ func (s *FileStorage) Delete(key string) error {
 func (s *FileStorage) Open(key string) (*os.File, error) {
 	path, err := s.safePath(key)
 	if err != nil {
+		return nil, ErrNotFound
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
 		return nil, ErrNotFound
 	}
 	return os.Open(path)
