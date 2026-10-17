@@ -134,3 +134,15 @@ The backup script rejects symlinked media roots and rejects layouts in which the
 backup destination and the media root contain one another. This prevents
 recursive self-archiving, disk exhaustion, and accidentally backing up files
 outside the intended media directory. These checks run **before** pg_dump.
+
+## Atomic restore promotion
+
+The restore script first validates and extracts the media archive into an
+isolated sibling staging directory, then runs `pg_restore` with
+`--single-transaction --exit-on-error`. Only after PostgreSQL commits
+successfully does it rename the staged media tree into position. If the
+PostgreSQL restore fails, the previous media tree is unchanged. The prior
+media tree is temporarily moved aside and recovered on a failed rename.
+**This is not a distributed transaction:** in a mixed application/database
+restore, keep the restored environment isolated until a complete product
+smoke check passes; do not serve requests while promotion is in progress.

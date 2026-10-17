@@ -59,7 +59,7 @@ until docker exec "$NAME" pg_isready -U "$USER" -d "$DB" >/dev/null 2>&1; do
 done
 
 echo "[drill] restoring backup"
-docker exec "$NAME" pg_restore   --dbname="$DB"   --username="$USER"   --no-owner --no-acl   /backup/postgres.dump
+docker exec "$NAME" pg_restore   --dbname="$DB"   --username="$USER"   --no-owner --no-acl --single-transaction --exit-on-error   /backup/postgres.dump
 
 echo "[drill] validating restored schema"
 TABLES="$(docker exec "$NAME" psql -At -U "$USER" -d "$DB" -c "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname='public';")"

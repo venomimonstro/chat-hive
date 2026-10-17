@@ -28,6 +28,17 @@ if [ -n "${DATABASE_URL:-}" ] && [ "$RESTORE_DATABASE_URL" = "$DATABASE_URL" ]; 
 fi
 
 # Validate all potentially destructive targets before changing the database.
+MEDIA_STAGE=""
+MEDIA_OLD=""
+cleanup() {
+  if [ -n "$MEDIA_STAGE" ] && [ -d "$MEDIA_STAGE" ]; then rm -rf -- "$MEDIA_STAGE"; fi
+  # If the final rename fails after moving aside the previous directory,
+  # restore it instead of destroying the last working media snapshot.
+  if [ -n "$MEDIA_OLD" ] && [ -d "$MEDIA_OLD" ]; then
+    if [ ! -e "$RESTORE_MEDIA_ROOT" ]; then mv -- "$MEDIA_OLD" "$RESTORE_MEDIA_ROOT"; fi
+  fi
+}
+trap cleanup EXIT INT TERM
 if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
   case "$RESTORE_MEDIA_ROOT" in /*) ;; *) echo 'Media restore requires an absolute path' >&2; exit 3 ;; esac
   command -v realpath >/dev/null 2>&1 || { echo 'realpath required for safe media restore' >&2; exit 3; }
@@ -42,16 +53,29 @@ if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
       echo 'Refusing media restore into a system/shared directory' >&2; exit 3 ;;
   esac
   [ ! -L "$RESTORE_MEDIA_ROOT" ] || { echo 'Media restore root must not be a symlink' >&2; exit 3; }
+  # Unpack and validate BEFORE touching the database or live media target.
+  mkdir -p "$(dirname -- "$RESTORE_MEDIA_ROOT")"
+  MEDIA_STAGE="$(mktemp -d "$(dirname -- "$RESTORE_MEDIA_ROOT")/.chat-restore-staged.XXXXXX")"
+  tar --no-same-owner --no-same-permissions -xzf "$BACKUP_PATH/media.tar.gz" -C "$MEDIA_STAGE"
 fi
 
-printf '%s\n' "Restoring PostgreSQL target..."
-pg_restore --dbname="$RESTORE_DATABASE_URL" --clean --if-exists --no-owner --no-acl "$BACKUP_PATH/postgres.dump"
+printf '%s\n' "Restoring PostgreSQL target transactionally..."
+pg_restore --dbname="$RESTORE_DATABASE_URL" --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error "$BACKUP_PATH/postgres.dump"
 
-if [ -n "$RESTORE_MEDIA_ROOT" ] && [ -f "$BACKUP_PATH/media.tar.gz" ]; then
-  printf '%s\n' "Restoring media target..."
-  mkdir -p "$RESTORE_MEDIA_ROOT"
-  find "$RESTORE_MEDIA_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-  tar -C "$RESTORE_MEDIA_ROOT" -xzf "$BACKUP_PATH/media.tar.gz"
+if [ -n "$MEDIA_STAGE" ]; then
+  printf '%s\n' "Promoting staged media restore..."
+  if [ -e "$RESTORE_MEDIA_ROOT" ]; then
+    [ -d "$RESTORE_MEDIA_ROOT" ] || { echo 'Media restore target must be a directory' >&2; exit 3; }
+    MEDIA_OLD="$(mktemp -d "$(dirname -- "$RESTORE_MEDIA_ROOT")/.chat-restore-previous.XXXXXX")"
+    rmdir "$MEDIA_OLD"
+    mv -- "$RESTORE_MEDIA_ROOT" "$MEDIA_OLD"
+  fi
+  mv -- "$MEDIA_STAGE" "$RESTORE_MEDIA_ROOT"
+  MEDIA_STAGE=""
+  if [ -n "$MEDIA_OLD" ]; then
+    rm -rf -- "$MEDIA_OLD"
+    MEDIA_OLD=""
+  fi
 fi
 
 printf '%s\n' "Restore completed. Run application smoke checks before promoting this target."

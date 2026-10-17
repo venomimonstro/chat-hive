@@ -42,6 +42,31 @@ BACKUP="$(find "$WORK/backups" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -pri
   sha256sum -c media.tar.gz.sha256 )
 sh "$ROOT/ops/backup/verify.sh" "$BACKUP"
 
+# Restore is fail-closed: a PostgreSQL error must not delete the previous
+# media tree. The staging directory must also be cleaned on failure.
+mkdir -p "$WORK/restore-target"
+printf 'keep-old\n' > "$WORK/restore-target/old.txt"
+export RESTORE_DATABASE_URL='postgres://example.invalid/restore-test'
+export RESTORE_MEDIA_ROOT="$WORK/restore-target"
+export CHAT_ALLOW_RESTORE='I_UNDERSTAND_THIS_REPLACES_TARGET_DATA'
+if sh "$ROOT/ops/backup/restore.sh" "$BACKUP" > "$WORK/failed-restore.log" 2>&1; then
+  echo 'Restore succeeded despite a deliberately failing pg_restore' >&2; exit 1
+fi
+[ -f "$WORK/restore-target/old.txt" ] || { echo 'Failed restore destroyed original media' >&2; exit 1; }
+[ -z "$(find "$WORK" -maxdepth 1 -type d -name '.chat-restore-staged.*' -print -quit)" ] || {
+  echo 'Failed restore left an unverified staging directory' >&2; exit 1;
+}
+
+# A successful restore stages/extracts media then replaces the old tree.
+cat > "$WORK/bin/pg_restore" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+chmod +x "$WORK/bin/pg_restore"
+sh "$ROOT/ops/backup/restore.sh" "$BACKUP" > "$WORK/successful-restore.log"
+[ ! -e "$WORK/restore-target/old.txt" ] || { echo 'Old media was not atomically replaced' >&2; exit 1; }
+cmp "$WORK/media/image.jpg" "$WORK/restore-target/image.jpg"
+
 # Missing media must fail without creating a promoted backup.
 mkdir -p "$WORK/no-media-backups"
 export CHAT_BACKUP_DIR="$WORK/no-media-backups"
