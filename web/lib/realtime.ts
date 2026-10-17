@@ -49,7 +49,7 @@ export class RealtimeClient {
   private pingTimer: number | null = null;
 
   start() {
-    if (!this.stopped && (this.socket || this.connecting)) return;
+    if (!this.stopped && (this.socket || this.connecting || this.reconnectTimer !== null)) return;
     this.stopped = false;
     void this.connect();
   }
@@ -57,6 +57,9 @@ export class RealtimeClient {
   stop() {
     this.stopped = true;
     this.connectionAttempt += 1;
+    this.connecting = false;
+    this.connectedAtLeastOnce = false;
+    this.reconnectAttempt = 0;
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
     if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
     this.reconnectTimer = null;
@@ -72,7 +75,9 @@ export class RealtimeClient {
     let ticket: Awaited<ReturnType<typeof issueTicket>>;
     try { ticket = await issueTicket(); }
     catch { ticket = null; }
-    this.connecting = false;
+    // Only the attempt that set connecting is allowed to clear it. A stale
+    // request from before stop()/start() must not unlock a newer attempt.
+    if (attempt === this.connectionAttempt) this.connecting = false;
     // A pending ticket request may finish after logout/unmount/stop.
     if (this.stopped || attempt !== this.connectionAttempt) return;
     if (!ticket) {
@@ -90,6 +95,8 @@ export class RealtimeClient {
     this.socket = socket;
 
     socket.onopen = () => {
+      if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
+      this.connectedAtLeastOnce = true;
       this.reconnectAttempt = 0;
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => {
@@ -98,6 +105,7 @@ export class RealtimeClient {
     };
 
     socket.onmessage = (message) => {
+      if (this.stopped || this.socket !== socket) return;
       try {
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
         window.dispatchEvent(new CustomEvent<RealtimeEvent>('chat:realtime', { detail: event }));
