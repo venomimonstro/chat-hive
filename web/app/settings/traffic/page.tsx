@@ -1,4 +1,5 @@
 'use client';
+import '../../traffic.css';
 
 import { useEffect, useState } from 'react';
 import { AppShell } from '../../../components/AppShell';

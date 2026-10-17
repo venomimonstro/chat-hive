@@ -7,10 +7,6 @@ import './profile.css';
 import './security.css';
 import './messenger.css';
 import './trust.css';
-import './community.css';
-import './channel.css';
-import './notifications.css';
-import './traffic.css';
 
 export const metadata: Metadata = {
   title: 'CHAT — Личные сообщения',

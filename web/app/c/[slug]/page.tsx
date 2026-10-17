@@ -1,3 +1,4 @@
+import '../../community.css';
 import type { Metadata } from 'next';
 import { GrowthView } from '../../../components/GrowthView';
 import { CommunityClient } from './CommunityClient';

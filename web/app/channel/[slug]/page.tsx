@@ -1,3 +1,4 @@
+import '../../channel.css';
 import type { Metadata } from 'next';
 import { GrowthView } from '../../../components/GrowthView';
 import { ChannelClient } from './ChannelClient';

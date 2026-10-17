@@ -1,4 +1,5 @@
 'use client';
+import '../notifications.css';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
