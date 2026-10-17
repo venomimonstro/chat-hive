@@ -15,6 +15,7 @@ import {
   enqueueOutbox, findOutbox, listOutbox, OutboxItem, removeOutbox
 } from '../lib/outbox';
 import type { RealtimeEvent } from '../lib/realtime';
+import { reconcileTimeline } from '../lib/messageTimeline';
 
 type LocalMessage = ChatMessage & { local_status?: 'sending' | 'failed' };
 type GroupRole = 'owner' | 'admin' | 'member' | null;
@@ -85,6 +86,9 @@ export function ChatsClient() {
     // React effects run after render. Update the guard synchronously so
     // responses from the previous conversation cannot mutate the new view.
     selectedIdRef.current = chat?.chat_id ?? '';
+    setMessages([]);
+    setHasOlder(false);
+    setMessageLoading(Boolean(chat));
     setSelected(chat);
     setReplyingTo(null);
     setEditing(null);
@@ -125,13 +129,7 @@ export function ChatsClient() {
       const [items, queued] = await Promise.all([listMessages(chatID, undefined, PAGE_SIZE), listOutbox(accountRef.current, chatID)]);
       if (selectedIdRef.current !== chatID) return;
       const ordered = [...items].reverse();
-      const pending = queued.map((item) => asLocalMessage(item, userId));
-      setMessages((current) => {
-        const firstSequence = ordered[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
-        const older = current.filter((item) => item.sequence < firstSequence && !item.local_status);
-        const serverIDs = new Set(ordered.map((item) => item.client_message_id));
-        return [...older, ...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
-      });
+      setMessages((current) => reconcileTimeline(current, items, queued, userId, chatID, true));
       void loadReactions(ordered);
       const last = ordered.at(-1);
       if (last) await markChatRead(chatID, last.sequence).catch(() => undefined);
@@ -259,6 +257,8 @@ export function ChatsClient() {
     }
 
     let active = true;
+    setMessages([]);
+    setHasOlder(false);
     // Never display privileged controls from the previously selected group
     // while the new group's role is being fetched.
     setGroupRole(null);
@@ -273,10 +273,7 @@ export function ChatsClient() {
         if (!active) return;
         const ordered = [...items].reverse();
         setHasOlder(items.length === PAGE_SIZE);
-        const pending = queued.map((item) => asLocalMessage(item, userId));
-        const serverIDs = new Set(ordered.map((item) => item.client_message_id));
-        const combined = [...ordered, ...pending.filter((item) => !serverIDs.has(item.client_message_id))];
-        setMessages(combined);
+        setMessages((current) => reconcileTimeline(current, items, queued, userId, selected.chat_id));
         void loadReactions(ordered);
         const last = ordered.at(-1);
         if (last) await markChatRead(selected.chat_id, last.sequence).catch(() => undefined);
