@@ -93,14 +93,25 @@ export class RealtimeClient {
       return;
     }
     this.socket = socket;
+    let lastPongAt = Date.now();
 
     socket.onopen = () => {
       if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
       window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
       this.reconnectAttempt = 0;
+      lastPongAt = Date.now();
       if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }));
+        if (this.stopped || socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
+        // TCP/WebSocket can remain half-open after a network transition.
+        // If two or more heartbeats go unanswered, force reconnect and
+        // recover missed events through the durable REST synchronization.
+        if (Date.now() - lastPongAt > 75_000) {
+          socket.close(4000, 'heartbeat timeout');
+          return;
+        }
+        try { socket.send(JSON.stringify({ type: 'ping' })); }
+        catch { socket.close(4000, 'heartbeat send failed'); }
       }, 25_000);
     };
 
@@ -108,6 +119,10 @@ export class RealtimeClient {
       if (this.stopped || this.socket !== socket) return;
       try {
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
+        if (event.type === 'pong' || event.type === 'ready') {
+          lastPongAt = Date.now();
+          return;
+        }
         window.dispatchEvent(new CustomEvent<RealtimeEvent>('chat:realtime', { detail: event }));
       } catch {
         // Invalid server events are ignored; REST sync remains authoritative.
