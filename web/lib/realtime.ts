@@ -107,9 +107,11 @@ export class RealtimeClient {
     }, 15_000);
 
     socket.onopen = () => {
+      // A stale socket from before stop/start must never cancel the timer
+      // protecting a newer connection attempt.
+      if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
       if (this.openTimer !== null) window.clearTimeout(this.openTimer);
       this.openTimer = null;
-      if (this.stopped || this.socket !== socket) { socket.close(1000, 'client shutdown'); return; }
       window.dispatchEvent(new CustomEvent<boolean>('chat:connection', { detail: true }));
       this.reconnectAttempt = 0;
       lastPongAt = Date.now();
